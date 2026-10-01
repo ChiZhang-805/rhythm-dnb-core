@@ -43,7 +43,8 @@ def build(root, output):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
             digest.update(name.encode()); digest.update(path.read_bytes())
-        environment = {**os.environ, 'SETUPTOOLS_SCM_PRETEND_VERSION': f'0.dev0+g{commit}.c{digest.hexdigest()[:12]}'}
+        environment = {**os.environ, 'PIP_NO_CACHE_DIR': '1',
+                       'SETUPTOOLS_SCM_PRETEND_VERSION': f'0.dev0+g{commit}.c{digest.hexdigest()[:12]}'}
         subprocess.run([sys.executable, '-m', 'pip', 'wheel', '--no-deps', '.', '--wheel-dir', str(output)],
                        cwd=source, env=environment, check=True)
         wheels = list(output.glob('*.whl'))
