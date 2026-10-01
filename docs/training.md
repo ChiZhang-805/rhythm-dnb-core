@@ -11,6 +11,10 @@
 python -m rhythm_dnb download-text --config configs/text/qwen.json \
   --output-dir /models/qwen --cache-dir /cache/huggingface
 
+# 检查语料划分、权重哈希和实际 token 长度，不加载神经网络
+python -m rhythm_dnb check-text --corpus /data/corpus.json --base /models/qwen \
+  --config configs/text/qwen.json --output /runs/text-input-check.json
+
 # 单卡；训练、校准、测试均读取本地文件
 CUDA_VISIBLE_DEVICES=0 python -m rhythm_dnb train-text \
   --corpus /data/corpus.json --base /models/qwen \
@@ -27,13 +31,13 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
 
 ## 调参和产物
 
-主模型起点：每卡批量 1、累积 16 次、最大 512 token、梯度检查点开启。有效批量为「每卡批量 × 累积次数 × 卡数」；两卡若保持 16，应把累积次数改为 8。超长文本报错，不静默截断。自动精度在所有参与卡支持时使用 BF16，否则 GPU 使用 FP16；溢出跳过更新会记录，整轮无有效更新则失败。
+主模型起点：每卡批量 1、累积 16 次、最大 512 token、梯度检查点开启。有效批量为「每卡批量 × 累积次数 × 卡数」；两卡若保持 16，应把累积次数改为 8。超长文本报错并给出记录 ID，不静默截断。`check-text` 通过仅说明输入检查通过，显存能否承受反向传播仍须在服务器实测。自动精度在所有参与卡支持时使用 BF16，否则 GPU 使用 FP16；溢出跳过更新会记录，整轮无有效更新则失败。
 
 多卡等待主进程验证和保存时，`process_timeout_minutes` 默认 120 分钟；超大验证集或慢共享磁盘需按实际耗时调整。运行记录同时保存 PyTorch、Transformers、PEFT 等库版本。
 
 参数的理由、依据类别和调整范围见 [参数表](parameters.csv)。QLoRA 原 7B 实验采用秩 64、alpha 16、学习率 2e-4；本项目是另一种回归任务，不能照搬并称为最优。目前秩 16 和学习率 1e-4 是资源较保守的待验证起点。
 
-调参时给 `train-text` 加 `--development-only`，输入文件只能含训练集和验证集；程序拒收校准、测试行。比较学习率、秩、长度和损失权重后锁定配置，再执行一次完整训练。不要反复运行完整流程挑测试成绩。
+调参时给 `check-text` 和 `train-text` 加 `--development-only`，输入文件只能含训练集和验证集；程序拒收校准、测试行。比较学习率、秩、长度和损失权重后锁定配置，再执行一次完整训练。不要反复运行完整流程挑测试成绩。
 
 每项证据门槛先在验证组选定，再在独立校准组检验，失败不重新搜索门槛。每人每项按记录身份的固定哈希选一条，避免重复文本虚增人数。接收条件是精度的单侧 [Clopper–Pearson 下界](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats._result_classes.BinomTestResult.proportion_ci.html)达到 0.95，17 项 Bonferroni 分配总 alpha=0.05；全正确也至少需 114 位被接收者。0.95 是预登记使用目标，保证依赖参与者独立、校准样本代表实际输入且未被人为正负平衡等条件；不是临床有效性保证。证据不足输出 `null`。
 
@@ -49,5 +53,31 @@ python -m rhythm_dnb plot-text --result /runs/text-training/result.json \
 图表显示各项误差、证据覆盖、评分波动幅度、误差相关和人工/模型散点。需要 `observed_at` 的同人重复标注才能评价个人变化；横断面成绩不能替代这一项。小模型测试只验证软件，真实训练和服务器多卡性能须另行报告。
 
 下载支持分段续传，核对固定提交的官方文件大小、SHA-256/Git 摘要及全部权重分片，再生成 `download.json`；该文件存在且校验通过才代表底座完整。完整底座不等于已完成本项目微调。
+
+## 文本训练之后怎么走
+
+| 步骤 | 入口 | 做什么、保存什么 |
+| --- | --- | --- |
+| 训练文本模型 | `train-text` · `text/train.py` | 主要使用 GPU；从人工标注学习 17 项程度与证据，保存适配器、评分头及评价。 |
+| 生成每日指标 | `quantify` / `prepare` · `workflows/prepare.py` | 用冻结文本模型和客观规则量化，再选出固定 DNB 面板；不是再次训练。 |
+| 生成独立真值 | `fit-endpoint` → `endpoints` → `label` · `workflows/endpoints.py` | 先拟合稳定界限，再确认事件，最后给每次预测生成 0/1/未知的离线标签。 |
+| 开发预警模型 | `develop` · `workflows/develop.py` | 主要使用 CPU；拟合参考人群、发现共同波动的指标群组、校准报警门槛，保存冻结 bundle。 |
+| 最终测试与使用 | `validate` → `score` | 在独立人群评估，通过后逐日预测；保持模型与报警状态连续。 |
+
+标签来自独立睡眠、饮食和活动观测，不能用文本预测值或 DNB 分数反过来造标签。各阶段按人隔离，真实输入字段见 [数据接入](data.md)。批量量化时通过 Python 接口复用同一个 `TextPredictor`，避免逐日重新加载底座。
+
+```sh
+python -m rhythm_dnb develop --input /data/development.json \
+  --study configs/study.json --output-dir /runs/dnb-bundle > /runs/development-receipt.json
+BUNDLE_PATH=$(python -c "import json; print(json.load(open('/runs/development-receipt.json'))['bundle'])")
+# EVALUATION_CUTOFF 是预先确定、带时区偏移的评价截止时间
+python -m rhythm_dnb validate --bundle "$BUNDLE_PATH" \
+  --cases /data/test-cases.json --events /data/test-events.json \
+  --monitoring /data/test-monitoring.json --as-of "$EVALUATION_CUTOFF" --output /runs/evaluation.json
+python -m rhythm_dnb score --bundle "$BUNDLE_PATH" \
+  --request /data/today-request.json --state /runs/previous-score.json --output /runs/today-score.json
+```
+
+首次 `score` 省略 `--state`；以后直接传上次完整输出。`validate` 默认沿用冻结配置的重采样次数，显式 `--bootstrap` 可覆盖并会记录。拿到服务器后依次核对系统/驱动、GPU 型号与显存、数据路径，再用实际训练记录确定批量和长度。
 
 实现依据：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-8B)、[QLoRA 官方 7B 配置](https://github.com/artidoro/qlora/blob/main/scripts/finetune_guanaco_7b.sh)、[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)。

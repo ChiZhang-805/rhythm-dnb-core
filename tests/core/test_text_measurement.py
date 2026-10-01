@@ -159,6 +159,59 @@ class TextMeasurementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Cross-split'):
                 prepare_corpus(rows, require_calibration=True)
 
+    def test_evidence_search_preserves_ties_and_nonmonotone_precision(self):
+        key = 'stress_intensity'
+        rng = np.random.default_rng(914)
+        examples = [[(.9, True), (.8, False), (.7, True), (.7, True), (.5, False)]]
+        examples += [list(zip(rng.integers(0, 11, 80) / 10, rng.integers(0, 2, 80).astype(bool))) for _ in range(25)]
+        for pairs in examples:
+            rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: 50. if known else None}}
+                    for i, (_, known) in enumerate(pairs)]
+            predictions = [{'evidence': {key: float(value)}} for value, _ in pairs]
+            expected = None
+            for threshold in sorted({value for value, _ in pairs}):
+                accepted = [known for value, known in pairs if value >= threshold]
+                if sum(accepted) / len(accepted) >= .75:
+                    expected = threshold
+                    break
+            policy = calibrate_evidence([], [], selection_rows=rows, selection_predictions=predictions, target_precision=.75)
+            self.assertEqual(policy['thresholds'][key]['candidate_threshold'], expected)
+
+    def test_preflight_checks_real_contract_and_tokenizer_without_model_load(self):
+        from unittest.mock import patch
+        from rhythm_dnb.text.preflight import check_training_inputs
+        from rhythm_dnb.text.dataset import ScoreDataset
+        from rhythm_dnb.text.checkpoint import load_tokenizer
+        with tempfile.TemporaryDirectory() as folder:
+            base, config, rows = qwen_fixture(folder)
+            with patch.object(ScoringModel, 'pretrained', side_effect=AssertionError('Preflight loaded a model')) as load:
+                report = check_training_inputs(rows, base, config)
+                self.assertEqual(report['tokens']['train']['records'], 10)
+                self.assertEqual(report['tokens']['test']['people'], 10)
+                self.assertLessEqual(report['tokens']['train']['max'], config['max_length'])
+                self.assertFalse(report['gpu_memory_fit_verified'])
+                self.assertFalse(report['model_loaded'])
+                with self.assertRaisesRegex(ValueError, 'exclude calibration and test'):
+                    check_training_inputs(rows, base, config, development_only=True)
+                development = [r for r in rows if r['split'] in ('train', 'validation')]
+                self.assertEqual(set(check_training_inputs(development, base, config, development_only=True)['tokens']), {'train', 'validation'})
+                from rhythm_dnb.cli import main
+                from contextlib import redirect_stdout
+                from io import StringIO
+                root = Path(folder)
+                (root / 'corpus.json').write_text(json.dumps(development), encoding='utf-8')
+                (root / 'config.json').write_text(json.dumps(config), encoding='utf-8')
+                with redirect_stdout(StringIO()):
+                    main(['check-text', '--corpus', str(root / 'corpus.json'), '--base', str(base),
+                          '--config', str(root / 'config.json'), '--development-only', '--output', str(root / 'check.json')])
+                self.assertEqual(json.loads((root / 'check.json').read_text(encoding='utf-8'))['status'], 'inputs_validated')
+                load.assert_not_called()
+            rows[0]['text'] = '超长真实输入检查' * 512
+            with self.assertRaisesRegex(ValueError, rows[0]['example_id']):
+                check_training_inputs(rows, base, config)
+            with self.assertRaisesRegex(ValueError, rows[0]['example_id']):
+                ScoreDataset([rows[0]], load_tokenizer(base), config['max_length'])
+
     def test_development_mode_cannot_consume_calibration_or_test(self):
         from rhythm_dnb.text.train import train
         with tempfile.TemporaryDirectory() as folder:

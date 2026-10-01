@@ -2,6 +2,7 @@
 
 import math
 from hashlib import sha256
+from itertools import groupby
 from .schema import METRICS
 
 METHOD = 'validation_threshold_independent_people_exact_bonferroni'
@@ -43,11 +44,14 @@ def calibrate_evidence(rows, predictions, *, selection_rows, selection_predictio
         positives = sum(known for _, known in pairs)
         candidate = None
         if any(known for _, known in selection) and any(not known for _, known in selection):
-            for threshold in sorted({value for value, _ in selection}):
-                accepted = [known for value, known in selection if value >= threshold]
-                if sum(accepted) / len(accepted) >= target_precision:
+            count, correct = 0, 0
+            for threshold, group in groupby(sorted(selection, reverse=True), key=lambda pair: pair[0]):
+                for _, known in group:
+                    count += 1
+                    correct += known
+                if correct / count >= target_precision:
                     candidate = threshold
-                    break
+                # Equal scores enter together; later passing cutoffs retain the greatest coverage.
         item = {'threshold': None, 'n': len(pairs), 'known': positives, 'accepted': 0,
                 'precision': None, 'precision_lower': 0., 'candidate_threshold': candidate,
                 'status': 'insufficient_evidence_calibration'}

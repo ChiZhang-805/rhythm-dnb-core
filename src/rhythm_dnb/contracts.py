@@ -170,6 +170,24 @@ def parse_request(payload):
     return PredictionRequest(**values)
 
 
+def parse_alarm_state(payload):
+    # PSEUDOCODE: accept a saved state or full previous response -> verify identities -> decode local dates.
+    values = dict(payload)
+    if 'state' in values:
+        state = values['state']
+        if not isinstance(state, dict) or any(values.get(key) != state.get(key) for key in ('participant_id', 'bundle_id')):
+            raise ValueError('Saved response and alarm state identities disagree.')
+        values = dict(state)
+    for key in ('last_day', 'last_alarm_day'):
+        if values.get(key) is not None:
+            values[key] = date.fromisoformat(values[key])
+    state = AlarmState(**values)
+    if (state.last_day is not None or state.last_alarm_day is not None or state.consecutive) and not all(
+            isinstance(value, str) and value.strip() for value in (state.participant_id, state.bundle_id, state.context)):
+        raise ValueError('Persisted alarm state requires person, bundle and context identities.')
+    return state
+
+
 def parse_observation(payload):
     # PSEUDOCODE: reconstruct explicit timestamps and provenance without inferring missing metadata.
     values = dict(payload); provenance = dict(values['provenance'])

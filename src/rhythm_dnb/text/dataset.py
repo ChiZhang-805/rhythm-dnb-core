@@ -17,7 +17,12 @@ class ScoreDataset:
     def __init__(self,rows,tokenizer,max_length):
         # PSEUDOCODE: retain reviewed rows -> tokenize every row using the fixed token limit.
         self.rows=rows
-        self.features=[encode(tokenizer,r['category'],r['text'],max_length) for r in rows]
+        self.features=[]
+        for row in rows:
+            try:
+                self.features.append(encode(tokenizer,row['category'],row['text'],max_length))
+            except ValueError as error:
+                raise ValueError(f"example_id={row.get('example_id', '<unknown>')}: {error}") from error
 
     def __len__(self):
         # PSEUDOCODE: return the number of original corpus rows.

@@ -51,9 +51,9 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('hardware', help='Inspect GPU devices visible on this host')
     audit = sub.add_parser('audit'); audit.add_argument('--database', required=True); audit.add_argument('--output', required=True)
-    score = sub.add_parser('score'); score.add_argument('--bundle', required=True); score.add_argument('--request', required=True); score.add_argument('--state'); score.add_argument('--output', required=True); score.add_argument('--method', choices=('single_sample', 'rolling'), default='single_sample')
+    score = sub.add_parser('score'); score.add_argument('--bundle', required=True); score.add_argument('--request', required=True); score.add_argument('--state', help='Previous complete score output or its state object'); score.add_argument('--output', required=True); score.add_argument('--method', choices=('single_sample', 'rolling'), default='single_sample')
     develop = sub.add_parser('develop'); develop.add_argument('--input', required=True); develop.add_argument('--study', required=True); develop.add_argument('--output-dir', required=True)
-    validate = sub.add_parser('validate'); validate.add_argument('--bundle', required=True); validate.add_argument('--cases', required=True); validate.add_argument('--as-of', required=True); validate.add_argument('--output', required=True); validate.add_argument('--bootstrap', type=int, default=1000)
+    validate = sub.add_parser('validate'); validate.add_argument('--bundle', required=True); validate.add_argument('--cases', required=True); validate.add_argument('--as-of', required=True); validate.add_argument('--output', required=True); validate.add_argument('--bootstrap', type=int, help='Defaults to the frozen study setting; 0 disables intervals')
     validate.add_argument('--events', required=True)
     validate.add_argument('--monitoring', required=True)
     prepare = sub.add_parser('prepare'); prepare.add_argument('--input', required=True); prepare.add_argument('--output', required=True)
@@ -62,6 +62,12 @@ def main(argv=None):
     plot = sub.add_parser('plot-text'); plot.add_argument('--result', required=True); plot.add_argument('--predictions', required=True); plot.add_argument('--output-dir', required=True)
     criteria = sub.add_parser('fit-endpoint'); criteria.add_argument('--input', required=True); criteria.add_argument('--study', required=True); criteria.add_argument('--cutoff', required=True); criteria.add_argument('--output', required=True)
     endpoint = sub.add_parser('endpoints'); endpoint.add_argument('--input', required=True); endpoint.add_argument('--study', required=True); endpoint.add_argument('--as-of', required=True); endpoint.add_argument('--output', required=True)
+    label = sub.add_parser('label', help='Generate an offline forecast target from a frozen endpoint timeline')
+    label.add_argument('--timeline', required=True); label.add_argument('--request', required=True); label.add_argument('--study', required=True)
+    label.add_argument('--followup-end', required=True); label.add_argument('--as-of', required=True); label.add_argument('--output', required=True)
+    check = sub.add_parser('check-text', help='Validate training inputs without loading model weights onto a device')
+    check.add_argument('--corpus', required=True); check.add_argument('--base', required=True); check.add_argument('--config', required=True)
+    check.add_argument('--development-only', action='store_true'); check.add_argument('--output', required=True)
     train = sub.add_parser('train-text'); train.add_argument('--corpus', required=True); train.add_argument('--base', required=True); train.add_argument('--config', required=True); train.add_argument('--output-dir', required=True)
     train.add_argument('--development-only', action='store_true', help='Tune using a train/validation-only corpus; never calibrate or test')
     text = sub.add_parser('score-text'); text.add_argument('--checkpoint', required=True); text.add_argument('--category', required=True); text.add_argument('--text', required=True); text.add_argument('--output', required=True)
@@ -77,12 +83,9 @@ def main(argv=None):
         result = audit_legacy_store(args.database)
     elif args.command == 'score':
         from .api import RhythmPredictor
-        from .contracts import parse_request, AlarmState
-        state = _read(args.state) if args.state else {}
-        for key in ('last_day', 'last_alarm_day'):
-            if state.get(key):
-                state[key] = date.fromisoformat(state[key])
-        result = RhythmPredictor.from_bundle(args.bundle).predict(parse_request(_read(args.request)), AlarmState(**state), method=args.method)
+        from .contracts import parse_request, parse_alarm_state
+        state = parse_alarm_state(_read(args.state) if args.state else {})
+        result = RhythmPredictor.from_bundle(args.bundle).predict(parse_request(_read(args.request)), state, method=args.method)
     elif args.command in ('prepare', 'quantify'):
         from .contracts import parse_observation
         from .workflows.prepare import prepare_day, quantify_day
@@ -109,6 +112,17 @@ def main(argv=None):
                  datetime.fromisoformat(r['available_at']), Provenance(**r['provenance'])) for r in payload['days']]
         result = build_endpoint_timeline(rows, date.fromisoformat(payload['baseline_start']), payload['criteria'],
                                          load_study(args.study), as_of=args.as_of)
+    elif args.command == 'label':
+        from .config import load_study
+        from .contracts import parse_request
+        from .workflows.endpoints import parse_timeline, label_timeline
+        timeline = parse_timeline(_read(args.timeline))
+        request = parse_request(_read(args.request))
+        if request.participant_id != timeline['participant_id'] or request.timezone != timeline['timezone']:
+            raise ValueError('Forecast request and endpoint timeline must use the same person and timezone.')
+        result = {'request': request, 'label': label_timeline(request.issued_at, timeline, load_study(args.study),
+                  followup_end=args.followup_end, as_of=args.as_of),
+                  'label_available_at': datetime.fromisoformat(args.as_of), 'outcome_protocol_id': timeline['protocol_id']}
     elif args.command == 'develop':
         from .config import load_study
         from .contracts import parse_panel
@@ -141,6 +155,9 @@ def main(argv=None):
     elif args.command == 'plot-text':
         from .text.plots import plot_evaluation
         print(canonical_json(plot_evaluation(_read(args.result), _read(args.predictions), args.output_dir))); return 0
+    elif args.command == 'check-text':
+        from .text.preflight import check_training_inputs
+        result = check_training_inputs(_read(args.corpus), args.base, _read(args.config), development_only=args.development_only)
     elif args.command == 'train-text':
         from .text.train import train as fit_text
         result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config), development_only=args.development_only)

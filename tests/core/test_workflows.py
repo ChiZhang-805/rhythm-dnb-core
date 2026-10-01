@@ -4,6 +4,9 @@ from dataclasses import replace, asdict
 from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 from pathlib import Path
+import json
+from contextlib import redirect_stdout
+from io import StringIO
 import tempfile
 import unittest
 import numpy as np
@@ -119,3 +122,46 @@ class WorkflowTests(unittest.TestCase):
         reference = self.bundle['reference']
         self.assertEqual(len(reference['people']), len(set(reference['people'])))
         self.assertEqual(len(reference['matrix']), 60)
+
+    def test_cli_score_continues_from_previous_complete_response(self):
+        from rhythm_dnb.cli import main
+        from rhythm_dnb.contracts import parse_alarm_state
+        first = self.cohort['test'][0].request
+        requests = sorted([case.request for case in self.cohort['test'] if case.request.participant_id == first.participant_id],
+                          key=lambda r: r.issued_at)[:2]
+        self.assertEqual(len(requests), 2)
+        with tempfile.TemporaryDirectory() as folder, redirect_stdout(StringIO()):
+            folder = Path(folder)
+            bundle = save_bundle(self.bundle, folder / 'bundle')
+            paths = [folder / name for name in ('first-request.json', 'second-request.json')]
+            for path, request in zip(paths, requests):
+                path.write_text(canonical_json(request), encoding='utf-8')
+            outputs = [folder / name for name in ('first-score.json', 'second-score.json')]
+            main(['score', '--bundle', str(bundle), '--request', str(paths[0]), '--output', str(outputs[0])])
+            previous = json.loads(outputs[0].read_text(encoding='utf-8'))
+            state = parse_alarm_state(previous)
+            self.assertEqual(state, parse_alarm_state(previous['state']))
+            main(['score', '--bundle', str(bundle), '--request', str(paths[1]), '--state', str(outputs[0]), '--output', str(outputs[1])])
+            expected = RhythmPredictor(self.bundle).predict(requests[1], state)
+            self.assertEqual(json.loads(outputs[1].read_text(encoding='utf-8')), json.loads(canonical_json(expected)))
+            with self.assertRaisesRegex(ValueError, 'Replay'):
+                main(['score', '--bundle', str(bundle), '--request', str(paths[1]), '--state', str(outputs[1]), '--output', str(outputs[1])])
+            previous['participant_id'] = 'another-person'
+            with self.assertRaisesRegex(ValueError, 'identities'):
+                parse_alarm_state(previous)
+            with self.assertRaisesRegex(ValueError, 'identities'):
+                parse_alarm_state({**previous['state'], 'participant_id': ''})
+
+    def test_validation_bootstrap_uses_frozen_configuration_or_explicit_override(self):
+        from unittest.mock import patch
+        options = dict(evaluation_as_of=datetime(2025, 10, 1, tzinfo=timezone.utc),
+                       events=self.cohort['test_events'], monitoring=self.cohort['test_monitoring'])
+        with patch('rhythm_dnb.workflows.validate.cluster_intervals', return_value={'checked': True}) as intervals:
+            report = validate(self.bundle, self.cohort['test'], **options)
+            self.assertEqual(intervals.call_args.kwargs['repetitions'], self.cohort['config'].bootstrap_repetitions)
+            self.assertEqual(report['bootstrap_repetitions'], self.cohort['config'].bootstrap_repetitions)
+            validate(self.bundle, self.cohort['test'], bootstrap_repetitions=2, **options)
+            self.assertEqual(intervals.call_args.kwargs['repetitions'], 2)
+        for invalid in (-1, 1, True, .5):
+            with self.assertRaisesRegex(ValueError, 'Bootstrap repetitions'):
+                validate(self.bundle, self.cohort['test'], bootstrap_repetitions=invalid, **options)

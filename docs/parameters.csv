@@ -57,7 +57,7 @@ annotation_tolerance,10,text/annotations.py,复核路由,任一头超过10分差
 exploratory_deviation_quantile,0.75,dnb/single_sample.py,探索算法,单样本网络的高偏差筛选项目选择,0.5或0.75或0.9不得混入冻结主分析,exploratory,https://doi.org/10.1371/journal.pcbi.1005633；数值非已验证行为节律参数
 exploratory_alpha,0.05,dnb/single_sample.py,探索算法,边扰动正态近似检验,默认BH仅此支路并非主模块置换,exploratory,https://doi.org/10.1371/journal.pcbi.1005633；数值非已验证行为节律参数
 exploratory_distance_cut,1.9,dnb/single_sample.py,探索算法,2减相关扰动绝对值的单连接切割,无行为数据最佳值需专门验证,exploratory,https://doi.org/10.1371/journal.pcbi.1005633；数值非已验证行为节律参数
-cluster_ci_repetitions,1000,research/evaluate.py,计算精度,以完整参与者为簇的百分位区间,1000或2000并报告有效重采样次数,precision_design,按参与者为簇重采样；1000次每端名义约25次；需增加次数检验稳定性
+cluster_ci_repetitions,10000,workflows/validate.py,计算精度,默认沿用冻结研究配置；以完整参与者为簇的百分位区间,显式bootstrap覆盖并记录；报告有效重采样次数,precision_design,10000次每端名义约250次；最坏重采样频率MCSE为0.005；不能替代扩大独立人群
 linear_C,0.01;0.1;1;10,research/baselines.py,比较模型搜索,开发集按人分组搜索,避免外层测试泄漏,validation_search,预定义低复杂度候选空间；开发集按人交叉验证选择；测试集不参与
 spline_degree,2;3,research/baselines.py,比较模型搜索,允许非线性程度关系,同时比较结点3或5与C为0.1或1,validation_search,预定义低复杂度候选空间；开发集按人交叉验证选择；测试集不参与
 tree_leaves,3;7,research/baselines.py,比较模型搜索,低复杂度梯度提升树起点,L2为1或10并报告各候选,validation_search,预定义低复杂度候选空间；开发集按人交叉验证选择；测试集不参与

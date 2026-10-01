@@ -110,7 +110,7 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
     return result
 
 
-def cluster_intervals(rows, threshold, *, repetitions=1000, seed=20261001, events=None, monitoring=None, **policy):
+def cluster_intervals(rows, threshold, *, repetitions=10000, seed=20261001, events=None, monitoring=None, **policy):
     # PSEUDOCODE: resample whole participants with replacement -> re-identify copies -> recompute metrics.
     groups = defaultdict(list)
     for row in rows:
@@ -124,7 +124,7 @@ def cluster_intervals(rows, threshold, *, repetitions=1000, seed=20261001, event
         periods[period.participant_id].append(period)
         groups.setdefault(period.participant_id, [])
     ids = sorted(groups)
-    if len(ids) < 2 or repetitions < 2:
+    if len(ids) < 2 or type(repetitions) is not int or repetitions < 2:
         raise ValueError('Cluster intervals need at least two people and two replicates.')
     rng = np.random.default_rng(seed)
     keys = ('event_sensitivity', 'false_alarms_per_30_days', 'alarm_ppv', 'median_lead_days')

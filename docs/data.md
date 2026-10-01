@@ -21,11 +21,14 @@
 | --- | --- |
 | `quantify` / `prepare` | 输入单人的 `participant_id, day, zone, issued_at, observations`，声明 `sleep_complete/eating_complete`；文本附 `text_checkpoint, text_base, text_device`。前者输出全部 25 项，后者选取固定的 12/8 项 DNB 面板；均保留单位、来源、覆盖和缺失原因。 |
 | `fit-endpoint` / `endpoints` | 前者从稳定人群拟合界限；后者生成独立结局。字段由 [endpoints.py](../src/rhythm_dnb/workflows/endpoints.py) 定义。 |
+| `label` | 输入 `--timeline`、`--request`、`--study`、`--followup-end` 和 `--as-of`，输出完整离线 case；检查人员、时区、事件规则和预测期限一致。 |
 | `develop` | 输入参考记录、稳定/事件前配对、校准请求、三个拟合截止时间、校准事件与监测日历；联合面板还需 `text_checkpoint`，核验人员隔离。输出冻结 bundle。字段见 [develop.py](../src/rhythm_dnb/workflows/develop.py)。 |
 | `validate` | 提供冻结 bundle、独立测试 cases、events、monitoring 和评价截止时间；输出性能与覆盖。 |
-| `score` | 提供 bundle 与 `participant_id, issued_at, timezone, history` 请求；后续调用传回上次状态，输出预警和新状态。 |
+| `score` | 提供 bundle 与 `participant_id, issued_at, timezone, history` 请求；后续 `--state` 可直接传上次完整输出或其中的状态对象。 |
 
 每条离线 case 将 `request` 和 `label, label_available_at, outcome_protocol_id` 分开。事件记录 `participant_id, onset, confirmed_at, definition`；监测日历记录 `participant_id, first_issue_day, last_issue_day, timezone`。具体字段以 [contracts.py](../src/rhythm_dnb/contracts.py) 为准，各命令参数用 `--help` 查看。
+
+`label` 生成的 case 按事先划分的人员整理成校准/测试列表。时间线保存生成截止时间和完整协议；更改事件窗口、持续天数或预测期限后，须从原始观测重建，不能只改标签。用较晚快照生成较早截止时间的标签也会被拒绝。
 
 研究日从当地 04:00 起，下一天 12:00 发布；跨日区间按实际时间切分。测量内容指纹随面板保存，外部输入不能省略。旧产物缺少指纹或指纹不同，应从来源重算，不能手工改标识。
 

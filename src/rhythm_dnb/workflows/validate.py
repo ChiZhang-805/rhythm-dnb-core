@@ -6,9 +6,13 @@ from ..timebase import instant
 from .develop import score_cases
 
 
-def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None, events=None, monitoring=None):
+def validate(bundle, cases, *, bootstrap_repetitions=None, evaluation_as_of=None, events=None, monitoring=None):
     # PSEUDOCODE: verify frozen policy/available labels -> infer unseen people -> report event metrics and intervals.
     config = check_compatibility(bundle)
+    if bootstrap_repetitions is None:
+        bootstrap_repetitions = config.bootstrap_repetitions
+    if type(bootstrap_repetitions) is not int or bootstrap_repetitions < 0 or bootstrap_repetitions == 1:
+        raise ValueError('Bootstrap repetitions must be zero (disabled) or an integer of at least two.')
     calibration = bundle['calibration']
     if events is None:
         raise ValueError('Primary real-data evaluation requires a separately locked confirmed-event registry.')
@@ -47,4 +51,5 @@ def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None
                                   seed=config.seed, events=events, monitoring=monitoring, **policy) if bootstrap_repetitions else None
     return {'bundle_id': bundle['id'], 'domain': 'source_backed',
             'metrics': metrics, 'cluster_intervals': intervals, 'predictions': responses,
+            'bootstrap_repetitions': bootstrap_repetitions,
             'fitting_on_test': False, 'clinical_validation': False}
