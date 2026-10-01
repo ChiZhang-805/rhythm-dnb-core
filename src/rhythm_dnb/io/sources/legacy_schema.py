@@ -209,11 +209,6 @@ def validate_record(record:dict,require_identity=True)->dict:
         raise ValueError('split: expected reference, train, validation or test')
     for key in FEATURE_KEYS:
         result[key]=_feature_value(record.get(key),key)
-    for category in FORMAL_CATEGORIES:
-        keys=[spec['key'] for spec in FEATURE_SPECS if spec.get('category')==category]
-        present=[result[key] is not None for key in keys]
-        if any(present) and not all(present):
-            raise ValueError(f'text scores for {category}: all category scores must be present or all missing')
     if any(result[key] is not None for key in TEXT_FEATURE_KEYS) and result['text_model_id'] is None:
         raise ValueError('text_model_id: required when text scores are present; use a fixed trained run ID')
     warnings=record.get('warnings',[])

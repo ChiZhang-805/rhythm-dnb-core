@@ -14,11 +14,13 @@ def compare_annotations(first, second, *, tolerance=10):
     keys = CATEGORIES[first['category']][1]
     if set(first['scores']) != set(keys) or set(second['scores']) != set(keys):
         raise ValueError('Incomplete annotation heads.')
-    vectors = np.asarray([[r['scores'][k] for k in keys] for r in (first, second)], dtype=float)
-    if not np.isfinite(vectors).all() or np.any((vectors < 0) | (vectors > 100)):
+    raw = [r['scores'][k] for r in (first, second) for k in keys]
+    if any(v is not None and (type(v) not in (int, float) or not np.isfinite(v) or not 0 <= v <= 100) for v in raw):
         raise ValueError('Annotation score outside 0-100.')
-    differences = np.abs(vectors[0] - vectors[1])
+    differences = {k: abs(first['scores'][k] - second['scores'][k]) if first['scores'][k] is not None and second['scores'][k] is not None else None for k in keys}
+    evidence_disagreement = [k for k in keys if (first['scores'][k] is None) != (second['scores'][k] is None)]
+    comparable = [v for v in differences.values() if v is not None]
     return {'example_id': first['example_id'], 'evidence_id': fingerprint([first, second]),
-            'mean_absolute_disagreement': float(differences.mean()),
-            'adjudication_required': bool(np.any(differences > tolerance)),
-            'per_head': dict(zip(keys, differences.tolist()))}
+            'mean_absolute_disagreement': float(np.mean(comparable)) if comparable else None,
+            'adjudication_required': bool(evidence_disagreement or any(v > tolerance for v in comparable)),
+            'evidence_disagreement': evidence_disagreement, 'per_head': differences}

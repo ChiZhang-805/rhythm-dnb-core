@@ -56,7 +56,7 @@ def validate_input(category,text):
 
 def schema():
     # PSEUDOCODE: export each category with its score names, directions and numeric bounds.
-    return {'contract_id':CONTRACT_ID,'categories':[
+    return {'contract_id':CONTRACT_ID,'unknown':None,'evidence':'independently_calibrated_per_metric','categories':[
         {'id':key,'label':name,'auxiliary':key not in FORMAL_CATEGORIES,
          'outputs':[{'key':metric,'label':next(m[2] for m in METRICS if m[0]==metric),
                      'direction':next(m[3] for m in METRICS if m[0]==metric),

@@ -4,6 +4,8 @@
 
 合格数据输出 `warning=0/1`；数据不足或策略未校准时输出 `null` 和原因。DNB 分数不是概率，当前没有随库提供经过真实人群验证的预警模型。
 
+文本主模型固定为 **Qwen3-8B**：本地权重 + LoRA 微调 + 程度/证据评分头。MacBERT-base 仅作可选对照。选择依据见研究方案；尚未证明哪个模型在本项目的真实人群上效果最好。
+
 ## 安装
 
 需要 Python ≥ 3.11。服务器先按 [PyTorch 官方安装说明](https://pytorch.org/get-started/locally/) 安装与驱动兼容的 GPU 运行环境，再安装本项目。
@@ -11,7 +13,7 @@
 ```sh
 git clone https://github.com/ChiZhang-805/rhythm-dnb-core.git
 cd rhythm-dnb-core
-python -m pip install -e ".[research,text,io,plots]"
+python -m pip install -e ".[research,text,quantized,io,plots]"
 python -m rhythm_dnb hardware
 python -m rhythm_dnb --help
 ```
@@ -21,7 +23,7 @@ python -m rhythm_dnb --help
 ## 使用顺序
 
 1. 按人划分数据，核对来源、时间、标注和随访。
-2. 用人工审核的真实文本训练程度模型；用测量规则生成每日指标。
+2. 用人工审核的真实文本训练程度模型；`quantify` 输出 8 项客观指标和 17 项文本指标，无依据则保留缺失。
 3. 独立定义失稳事件，拟合稳定参考，发现 DNB 群组，校准报警策略。
 4. 冻结模型，用未参与开发的人群测试；通过后才接入实际预警。
 

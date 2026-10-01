@@ -41,7 +41,7 @@ def measurement_identity():
     paths += [root / name for name in ('definitions.py', 'timebase.py', 'provenance.py', 'config.py', 'contracts.py',
               'io/validation.py', 'workflows/prepare.py', 'workflows/endpoints.py', 'workflows/develop.py',
               'research/discover.py', 'research/calibrate.py', 'research/evaluate.py',
-              'text/schema.py', 'text/model.py', 'text/dataset.py', 'text/predict.py')]
+              'text/schema.py', 'text/model.py', 'text/dataset.py', 'text/predict.py', 'text/evidence.py')]
     digest = sha256()
     for path in sorted(paths):
         digest.update(path.relative_to(root).as_posix().encode())

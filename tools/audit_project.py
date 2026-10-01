@@ -62,7 +62,7 @@ def check_configs(root):
     # PSEUDOCODE: compare configured panels/defaults against the actual contracts and the parameter table.
     from rhythm_dnb.config import StudyConfig, load_study
     from rhythm_dnb.measures.panel import get_panel, CLOCKS, UNITS
-    from rhythm_dnb.text.train import validate_config
+    from rhythm_dnb.text.config import validate_config
     findings = []
     for path in sorted((root / 'configs').glob('study*.json')):
         load_study(path)
@@ -71,7 +71,9 @@ def check_configs(root):
         expected = [{'name': key, 'unit': UNITS[key], 'circular': key in CLOCKS} for key in get_panel(panel['id'])]
         if panel['features'] != expected:
             findings.append(str(path.relative_to(root)) + ': panel differs from executable contract')
-    training = validate_config(json.loads((root / 'configs/text/macbert.json').read_text(encoding='utf-8')))
+    for path in sorted((root / 'configs/text').glob('*.json')):
+        validate_config(json.loads(path.read_text(encoding='utf-8')))
+    training = validate_config(json.loads((root / 'configs/text/qwen.json').read_text(encoding='utf-8')))
     with (root / 'docs/parameters.csv').open(encoding='utf-8', newline='') as stream:
         rows = list(csv.DictReader(stream))
     parameters = {row['parameter']: row for row in rows}

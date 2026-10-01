@@ -10,52 +10,11 @@ from ..provenance import canonical_json, fingerprint, file_hash
 from .corpus import prepare_corpus
 from .dataset import ScoreDataset, Collator
 from .evaluate import mean_baseline, median_baseline, report
-from .checkpoint import save_checkpoint, load_checkpoint
+from .checkpoint import save_checkpoint, load_checkpoint, load_tokenizer
+from .evidence import calibrate_evidence
 
-RUNTIME_DEFAULTS = {'precision': 'auto', 'gradient_checkpointing': True, 'num_workers': 0}
-
-
-def validate_config(config):
-    # PSEUDOCODE: normalize hardware options -> reject unknown fields and invalid training choices.
-    config = {**RUNTIME_DEFAULTS, **config}
-    required = {'model_id', 'revision', 'seed', 'max_length', 'batch_size', 'gradient_accumulation',
-                'epochs', 'patience', 'encoder_lr', 'head_lr', 'weight_decay',
-                'warmup_ratio', 'huber_delta', 'dropout', 'max_grad_norm', 'threads', 'device'} | set(RUNTIME_DEFAULTS)
-    if set(config) != required or config['model_id'] != 'hfl/chinese-macbert-base':
-        raise ValueError('Unsupported training configuration.')
-    revision = config['revision']
-    if not isinstance(revision, str) or len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
-        raise ValueError('Base model revision must be an immutable commit.')
-    for key in ('seed', 'max_length', 'batch_size', 'gradient_accumulation', 'epochs', 'patience', 'threads'):
-        if type(config[key]) is not int or config[key] < 1:
-            raise ValueError('Invalid integer: ' + key)
-    if config['seed'] >= 2 ** 32:
-        raise ValueError('Training seed must fit the NumPy random-state range.')
-    if type(config['num_workers']) is not int or config['num_workers'] < 0 or type(config['gradient_checkpointing']) is not bool:
-        raise ValueError('Invalid data-loader/checkpointing settings.')
-    if config['device'] not in ('auto', 'cpu', 'cuda') or config['precision'] not in ('auto', 'fp32', 'fp16', 'bf16'):
-        raise ValueError('Unsupported device or precision.')
-    for key in ('encoder_lr', 'head_lr', 'huber_delta', 'max_grad_norm'):
-        if type(config[key]) not in (int, float) or not math.isfinite(config[key]) or config[key] <= 0:
-            raise ValueError('Invalid positive parameter: ' + key)
-    if any(type(config[k]) not in (int, float) or not math.isfinite(config[k]) for k in ('dropout', 'warmup_ratio', 'weight_decay')) or not 8 <= config['max_length'] <= 512 or not 0 <= config['dropout'] < 1 or not 0 <= config['warmup_ratio'] < 1 or config['weight_decay'] < 0:
-        raise ValueError('Invalid token limit, regularization or warmup.')
-    return config
-
-
-def _check_base(base_path, config):
-    # PSEUDOCODE: verify every local encoder/tokenizer file against the pinned acquisition receipt.
-    receipt = json.loads((base_path / 'download.json').read_text(encoding='utf-8'))
-    if receipt['model_id'] != config['model_id'] or receipt['revision'] != config['revision'] or not receipt.get('files'):
-        raise ValueError('Base model receipt differs from training config.')
-    actual = {p.relative_to(base_path).as_posix() for p in base_path.rglob('*') if p.is_file() and p.name != 'download.json'}
-    if actual != set(receipt['files']) or not {'config.json', 'vocab.txt'} <= actual or not any(n.endswith(('.safetensors', '.bin')) for n in actual):
-        raise ValueError('Base receipt must cover the complete model and tokenizer inventory.')
-    for name, digest in receipt['files'].items():
-        source = (base_path / name).resolve()
-        if not source.is_relative_to(base_path.resolve()) or file_hash(source) != digest:
-            raise ValueError('Base model hash mismatch.')
-    return fingerprint(receipt)
+from .config import validate_config
+from .weights import check_base as _check_base
 
 
 def _inputs(batch, device):
@@ -77,7 +36,9 @@ def predict_rows(model, tokenizer, rows, config, device):
         for batch in loader:
             outputs = model(**_inputs(batch, device))
             for index, category in enumerate(batch['categories']):
-                predictions.append(dict(zip(CATEGORIES[category][1], (outputs[category][index].float().cpu() * 100).tolist())))
+                keys = CATEGORIES[category][1]
+                predictions.append({'scores': dict(zip(keys, (outputs[category][index].float().cpu() * 100).tolist())),
+                    'evidence': dict(zip(keys, torch.sigmoid(outputs['_evidence'][category][index].float()).cpu().tolist()))})
     return predictions
 
 
@@ -100,7 +61,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             with runtime.autocast():
                 outputs = model(**_inputs(batch, runtime.device))
                 losses = regression_loss(outputs, batch['labels'].to(runtime.device), batch['categories'],
-                                         config['huber_delta'], reduction='none')
+                                         config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'])
                 weights = batch['sample_weights'].to(runtime.device)
                 weighted = (losses * weights).sum()
                 # DDP averages process gradients; undo it before dividing by the actual global sample count.
@@ -134,7 +95,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
     import torch
     from torch.nn.parallel import DistributedDataParallel
     from torch.utils.data import DataLoader
-    from transformers import BertTokenizer, get_linear_schedule_with_warmup
+    from transformers import get_linear_schedule_with_warmup
     from .model import ScoringModel
     from .runtime import ShardedBatches
     signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config})
@@ -148,17 +109,17 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
     torch.set_num_threads(config['threads'])
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    tokenizer = BertTokenizer.from_pretrained(base_path, local_files_only=True)
+    tokenizer = load_tokenizer(base_path)
     datasets = {name: ScoreDataset(rows, tokenizer, config['max_length']) for name, rows in partitions.items()}
     runtime.primary(lambda: output_path.mkdir(parents=True, exist_ok=False))
     execution = runtime.describe()
     runtime.primary(lambda: (output_path / 'execution.json').write_text(canonical_json(execution), encoding='utf-8'))
-    core = ScoringModel.pretrained(base_path, config['dropout']).to(runtime.device)
+    core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
     if config['gradient_checkpointing']:
         core.encoder.config.use_cache = False
         core.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     optimizer = torch.optim.AdamW([{'params': [p for p in core.encoder.parameters() if p.requires_grad], 'lr': config['encoder_lr']},
-                                  {'params': core.heads.parameters(), 'lr': config['head_lr']}], weight_decay=config['weight_decay'])
+                                  {'params': list(core.heads.parameters()) + list(core.evidence_heads.parameters()), 'lr': config['head_lr']}], weight_decay=config['weight_decay'])
     model = DistributedDataParallel(core, device_ids=[runtime.device.index] if runtime.device.type == 'cuda' else None,
                                     broadcast_buffers=False) if runtime.world_size > 1 else core
     microbatches = math.ceil(len(datasets['train']) / (config['batch_size'] * runtime.world_size))
@@ -173,6 +134,8 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
         loader = DataLoader(datasets['train'], batch_sampler=sampler, collate_fn=Collator(tokenizer),
                             num_workers=config['num_workers'], pin_memory=runtime.device.type == 'cuda', **options)
         progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']))
+        if not progress['optimizer_steps']:
+            raise ValueError('Every optimizer step overflowed; no trained checkpoint can be selected.')
         validation = runtime.primary(lambda: report(partitions['validation'],
             predict_rows(core, tokenizer, partitions['validation'], config, runtime.device), baseline, median_reference))
         metric = validation['macro_category_mae']
@@ -196,12 +159,21 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
 
     def finish():
         # PSEUDOCODE: reload the selected checkpoint -> evaluate untouched test rows -> save one final report.
-        selected, selected_tokenizer, _, identity = load_checkpoint(best_path)
-        selected.to(runtime.device)
+        selected, selected_tokenizer, manifest, _ = load_checkpoint(best_path, base_path=base_path, device=runtime.device, dtype=runtime.dtype)
+        calibration_rows = partitions.get('calibration', [])
+        calibration_predictions = predict_rows(selected, selected_tokenizer, calibration_rows, config, runtime.device) if calibration_rows else []
+        evidence = calibrate_evidence(calibration_rows, calibration_predictions,
+            target_precision=config['evidence_precision'], minimum=config['evidence_min_samples'])
+        metadata = {k: v for k, v in manifest.items() if k not in ('files', 'status', 'storage', 'contract', 'config', 'purpose')}
+        final_path = save_checkpoint(output_path / 'model', selected, selected_tokenizer, config, {**metadata, 'evidence_calibration': evidence})
+        identity = file_hash(final_path / 'manifest.json')
         predictions = predict_rows(selected, selected_tokenizer, partitions['test'], config, runtime.device)
-        final = {'best_checkpoint': best_path, 'identity': identity, 'corpus': corpus, 'execution': execution,
-                 'test': report(partitions['test'], predictions, baseline, median_reference), 'history': history}
+        final = {'best_checkpoint': str(final_path), 'identity': identity, 'corpus': corpus, 'execution': execution,
+                 'evidence_calibration': evidence, 'test': report(partitions['test'], predictions, baseline, median_reference, evidence), 'history': history}
         (output_path / 'result.json').write_text(canonical_json(final), encoding='utf-8')
+        points = {'identity': identity, 'rows': [{'example_id': row['example_id'], 'truth': row['scores'], **prediction}
+                  for row, prediction in zip(partitions['test'], predictions)]}
+        (output_path / 'test-predictions.json').write_text(canonical_json(points), encoding='utf-8')
         return final
 
     return runtime.primary(finish)
@@ -211,7 +183,7 @@ def train(rows, base_path, output_path, config):
     # PSEUDOCODE: require reviewed real-source corpus and verified base files before starting training.
     from .runtime import TrainingRuntime
     config = validate_config(config)
-    partitions, corpus = prepare_corpus(rows)
+    partitions, corpus = prepare_corpus(rows, require_calibration=config['model_id'] == 'Qwen/Qwen3-8B')
     base_path, output_path = Path(base_path).resolve(), Path(output_path).resolve()
     base_id = _check_base(base_path, config)
     with TrainingRuntime(config) as runtime:

@@ -13,10 +13,11 @@ from .measures.panel import get_panel
 from .measures.scaling import transform, fit_scaler
 
 
-def make_bundle(config, reference, discovery, calibration=None, *, text_model_id=None):
+def make_bundle(config, reference, discovery, calibration=None, *, text_model_id=None, text_fitted_people=()):
     # PSEUDOCODE: assemble content-identified frozen artifacts, then run the same checks as loading.
     payload = {'measurement_id': MEASUREMENT_ID, 'study': asdict(config), 'reference': reference,
-               'discovery': discovery, 'calibration': calibration, 'text_model_id': text_model_id}
+               'discovery': discovery, 'calibration': calibration, 'text_model_id': text_model_id,
+               'text_fitted_people': sorted(set(text_fitted_people))}
     bundle = {**payload, 'id': fingerprint(payload)}
     check_compatibility(bundle)
     return bundle
@@ -24,7 +25,7 @@ def make_bundle(config, reference, discovery, calibration=None, *, text_model_id
 
 def check_compatibility(bundle):
     # PSEUDOCODE: verify hashes and semantics -> enforce disjoint roles and ordered fitting cutoffs.
-    if set(bundle) != {'measurement_id', 'study', 'reference', 'discovery', 'calibration', 'text_model_id', 'id'}:
+    if set(bundle) != {'measurement_id', 'study', 'reference', 'discovery', 'calibration', 'text_model_id', 'text_fitted_people', 'id'}:
         raise ValueError('Unexpected bundle fields.')
     if bundle['measurement_id'] != MEASUREMENT_ID or fingerprint({k: v for k, v in bundle.items() if k != 'id'}) != bundle['id']:
         raise ValueError('Bundle checksum/measurement definition mismatch.')
@@ -37,6 +38,11 @@ def check_compatibility(bundle):
     features = get_panel(config.panel_id)
     if config.panel_id == 'joint12' and not bundle['text_model_id']:
         raise ValueError('The joint panel requires a pinned text model identity.')
+    text_people = bundle['text_fitted_people']
+    if not isinstance(text_people, list) or any(not isinstance(p, str) or not p.strip() for p in text_people) or len(set(text_people)) != len(text_people):
+        raise ValueError('Invalid text-fitting participant registry.')
+    if config.panel_id == 'joint12' and not text_people:
+        raise ValueError('The joint panel requires the text-fitting participant registry.')
     if reference.get('text_model_id') != bundle['text_model_id']:
         raise ValueError('Reference and bundle text models differ.')
     if tuple(reference['features']) != features:
@@ -75,6 +81,8 @@ def check_compatibility(bundle):
             raise ValueError('Calibration belongs to different frozen artifacts.')
         if (reference_people | development_people) & set(calibration['people']):
             raise ValueError('Calibration participant overlap.')
+        if set(text_people) & set(calibration['people']):
+            raise ValueError('Alarm calibration overlaps text-fitting participants.')
         if instant(calibration['cutoff']) < instant(discovery['cutoff']):
             raise ValueError('Calibration predates discovery.')
         threshold = calibration['threshold']

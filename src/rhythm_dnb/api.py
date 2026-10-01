@@ -27,7 +27,7 @@ class RhythmPredictor:
             raise ValueError('Unknown inference method.')
         day, _, as_of = forecast_bounds(request.issued_at, request.timezone)
         reference = bundle['reference']
-        roles = reference['people'] + bundle['discovery']['people']
+        roles = reference['people'] + bundle['discovery']['people'] + bundle['text_fitted_people']
         if bundle['calibration']:
             roles += bundle['calibration']['people']
         if request.participant_id in roles:
@@ -80,10 +80,10 @@ class RhythmPredictor:
         return PredictionResponse(request.participant_id, request.issued_at, bundle['id'], status,
                                   warning, score, results, reasons, new_state)
 
-    def score_text(self, category, text, checkpoint, *, device='cpu'):
+    def score_text(self, category, text, checkpoint, *, device='auto', base_path=None):
         # PSEUDOCODE: lazy-load a local checkpoint and require the text identity frozen in this bundle.
         from .text.predict import TextPredictor
-        predictor = TextPredictor(checkpoint, device=device)
+        predictor = TextPredictor(checkpoint, device=device, base_path=base_path)
         if predictor.model_identity != self._bundle['text_model_id']:
             raise ValueError('Text checkpoint differs from the frozen bundle.')
         return predictor.predict(category, text)

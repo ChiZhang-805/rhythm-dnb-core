@@ -9,7 +9,9 @@
 | 文本语料 JSON 列表 | `example_id, participant_id, group_id, split, category, text, scores, origin, review_status, annotation_evidence_id`。 |
 | 原始观测 | `observation_id, participant_id, variable, value, unit, start, end, available_at, timezone, provenance`。 |
 
-文本的 `split` 为 `train/validation/test`，每组都包含情绪、压力、饮食、睡眠、社交五类。分数按 [schema.py](../src/rhythm_dnb/text/schema.py) 对应类别填写全部输出，范围 0–100；必须人工审核通过。只接受真实原文或真实原文翻译；构造文本不进入主训练和测试。同一人、同源组和重复文本不能跨分区。
+主模型的 `split` 为 `train/validation/calibration/test`，分别负责拟合、选模型、校准证据门槛和最终评价。每组包含情绪、压力、饮食、睡眠、社交五类。分数按 [schema.py](../src/rhythm_dnb/text/schema.py) 填写全部字段：有依据时为 0–100，无法判断时为 `null`。明确“没有焦虑”可标 0；根本没提到且无法推断不能标 0。训练集每项都需有可评分和不可评分的真实例子，标注经过人工审核与分歧仲裁。
+
+只接受真实原文或其翻译，不接受构造语料。同一人、同源组和重复文本不能跨分区；文本拟合、选模和证据校准使用过的人，不能再进入 DNB 报警校准或最终测试。跨数据集必须沿用统一人员标识。可附带偏移量的 `observed_at`，用于检验同一个人的连续变化；没有时间信息则不报告纵向效果。外部 0–3 等级标签不能直接伪装成精确的 0–100 程度标签。
 
 观测的时间必须带偏移量，另附实际 IANA 时区。来源记录 `kind, source_id, source_hash, parent_ids, method, independent`；推导值保留上游记录。未知值用 `null`，不能猜测设备未记录的时间、佩戴覆盖或热量摄入。具体校验见 [validation.py](../src/rhythm_dnb/io/validation.py)。
 
@@ -17,15 +19,17 @@
 
 | 命令 | 输入与输出 |
 | --- | --- |
-| `prepare` | 输入单人的 `participant_id, day, zone, issued_at, observations`；另须声明 `sleep_complete/eating_complete`，可附 `text_checkpoint`。输出每日面板，保留来源、覆盖和缺失原因。 |
+| `quantify` / `prepare` | 输入单人的 `participant_id, day, zone, issued_at, observations`，声明 `sleep_complete/eating_complete`；文本附 `text_checkpoint, text_base, text_device`。前者输出全部 25 项，后者选取固定的 12/8 项 DNB 面板；均保留单位、来源、覆盖和缺失原因。 |
 | `fit-endpoint` / `endpoints` | 前者从稳定人群拟合界限；后者生成独立结局。字段由 [endpoints.py](../src/rhythm_dnb/workflows/endpoints.py) 定义。 |
-| `develop` | 输入参考记录、稳定/事件前配对、校准请求、三个拟合截止时间、校准事件与监测日历；输出冻结 bundle。完整参数见 [develop.py](../src/rhythm_dnb/workflows/develop.py)。 |
+| `develop` | 输入参考记录、稳定/事件前配对、校准请求、三个拟合截止时间、校准事件与监测日历；联合面板还需 `text_checkpoint`，核验人员隔离。输出冻结 bundle。字段见 [develop.py](../src/rhythm_dnb/workflows/develop.py)。 |
 | `validate` | 提供冻结 bundle、独立测试 cases、events、monitoring 和评价截止时间；输出性能与覆盖。 |
 | `score` | 提供 bundle 与 `participant_id, issued_at, timezone, history` 请求；后续调用传回上次状态，输出预警和新状态。 |
 
 每条离线 case 将 `request` 和 `label, label_available_at, outcome_protocol_id` 分开。事件记录 `participant_id, onset, confirmed_at, definition`；监测日历记录 `participant_id, first_issue_day, last_issue_day, timezone`。具体字段以 [contracts.py](../src/rhythm_dnb/contracts.py) 为准，各命令参数用 `--help` 查看。
 
 研究日从当地 04:00 起，下一天 12:00 发布；跨日区间按实际时间切分。测量内容指纹随面板保存，外部输入不能省略。旧产物缺少指纹或指纹不同，应从来源重算，不能手工改标识。
+
+文本输出中的 `scores` 才是通过证据门槛的分数；`estimates` 是未经接收检查的原始估计，不能代替缺失值送入 DNB。分数反映文字所表达的程度，不是情绪发生概率，也不是设备或临床测量值。
 
 ## 存储与图表
 

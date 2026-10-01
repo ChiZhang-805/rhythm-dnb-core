@@ -9,6 +9,13 @@ from ..timebase import instant
 DOMAINS = ('S1', 'E1', 'A1')
 
 
+def _domain_value(value, domain):
+    # PSEUDOCODE: preserve missing data -> reject impossible domain scales before fitting an endpoint.
+    if value is not None and (type(value) not in (int, float) or not np.isfinite(value) or value < 0 or domain == 'A1' and value > 1):
+        raise ValueError('Invalid endpoint domain value: ' + domain)
+    return value
+
+
 def personal_anchor(values_by_day, baseline_start, *, baseline_days=14, window=7, minimum=6):
     """Median of baseline rolling-window measures, days 7 through 14 inclusive."""
     # PSEUDOCODE: select preregistered baseline window endings -> require six complete measurements.
@@ -17,6 +24,7 @@ def personal_anchor(values_by_day, baseline_start, *, baseline_days=14, window=7
     selected = []
     for offset in range(window - 1, baseline_days):
         values = values_by_day.get(baseline_start + timedelta(days=offset), {})
+        values = {k: _domain_value(values.get(k), k) for k in DOMAINS}
         if all(values.get(k) is not None and np.isfinite(values[k]) for k in DOMAINS):
             selected.append([values[k] for k in DOMAINS])
     if len(selected) < minimum:
@@ -41,14 +49,17 @@ def fit_criteria(stable_people, cutoff, *, quantile=.95, minimum_people=60):
     """
     # PSEUDOCODE: require independently certified stable follow-up -> fit absolute and positive-change bounds.
     people = list(stable_people); ids = [p['participant_id'] for p in people]
-    if len(set(ids)) != len(ids) or len(ids) < minimum_people:
+    if type(minimum_people) is not int or minimum_people < 2 or any(not isinstance(p, str) or not p.strip() for p in ids) or len(set(ids)) != len(ids) or len(ids) < minimum_people:
         raise ValueError('Endpoint thresholds require independent stable people.')
     thresholds = {}
     for p in people:
         if p.get('stable') is not True or not p.get('evidence_id') or instant(p['available_at']) > instant(cutoff):
             raise ValueError('Stable outcome evidence is unavailable at fitting cutoff.')
-        if not all(k in p['anchor'] and np.isfinite(p['anchor'][k]) for k in DOMAINS):
+        if not all(_domain_value(p['anchor'].get(k), k) is not None for k in DOMAINS):
             raise ValueError('Missing stable-person baseline anchor.')
+        for row in p['values']:
+            for domain in DOMAINS:
+                _domain_value(row.get(domain), domain)
     for domain in DOMAINS:
         levels, changes, weights = [], [], []
         for p in people:
@@ -71,6 +82,9 @@ def assess_day(participant_id, day, values, anchor, criteria, available_at):
         raise ValueError('Endpoint criteria checksum mismatch.')
     if instant(available_at) < instant(criteria['cutoff']) or participant_id in criteria['people']:
         raise ValueError('Endpoint criteria must precede use on independent people.')
+    for domain in DOMAINS:
+        _domain_value(values.get(domain), domain)
+        _domain_value((anchor or {}).get(domain), domain)
     valid = anchor is not None and all(values.get(k) is not None and np.isfinite(values[k]) and
                                        k in anchor and np.isfinite(anchor[k]) for k in DOMAINS)
     abnormal = () if not valid else tuple(k for k in DOMAINS

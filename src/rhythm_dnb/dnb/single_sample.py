@@ -59,7 +59,8 @@ def sample_network(sample, reference, feature_names, *, deviation_quantile=.75, 
     """
     # PSEUDOCODE: form single-sample perturbations -> test high-deviation edges -> return signed network.
     from math import erfc, sqrt
-    if not 0 < deviation_quantile < 1 or not 0 < alpha < 1 or correction not in ('bh', 'none'):
+    _, epsilon = _settings(9, epsilon)
+    if any(type(v) not in (int, float) or not np.isfinite(v) for v in (deviation_quantile, alpha)) or not 0 < deviation_quantile < 1 or not 0 < alpha < 1 or correction not in ('bh', 'none'):
         raise ValueError('Invalid network screening settings.')
     rows, names, order = _matrix(reference, feature_names)
     rows = _complete_rows(rows, 9, reference=True)
@@ -98,7 +99,7 @@ def discover_sample_modules(sample, reference, feature_names, *, deviation_quant
     # PSEUDOCODE: screen edges -> cluster distance 2-|deltaPCC| -> score nontrivial clusters.
     from scipy.cluster.hierarchy import linkage, fcluster
     from scipy.spatial.distance import squareform
-    if not 0 <= distance_cut < 2:
+    if type(distance_cut) not in (int, float) or not np.isfinite(distance_cut) or not 0 <= distance_cut < 2:
         raise ValueError('distance_cut must be in [0,2).')
     network = sample_network(sample, reference, feature_names, deviation_quantile=deviation_quantile,
                              alpha=alpha, correction=correction)

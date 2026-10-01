@@ -37,14 +37,28 @@ def score_cases(bundle, cases, *, method='single_sample'):
 
 def develop(reference_candidates, pairs, calibration_cases, config, *, reference_cutoff,
             discovery_cutoff, calibration_cutoff, text_model_id=None, method='single_sample',
-            minimum_calibration_events=None, calibration_events=None, calibration_monitoring=None):
+            minimum_calibration_events=None, calibration_events=None, calibration_monitoring=None,
+            text_checkpoint=None):
     # PSEUDOCODE: freeze reference -> discover modules -> score independent calibration -> freeze policy.
     features = get_panel(config.panel_id)
+    text_people = []
+    if config.panel_id == 'joint12':
+        from ..text.checkpoint import inspect_checkpoint
+        if text_checkpoint is None:
+            raise ValueError('Joint development requires the verified text checkpoint and participant registry.')
+        manifest, identity = inspect_checkpoint(text_checkpoint)
+        if text_model_id is not None and identity != text_model_id:
+            raise ValueError('Declared text identity differs from the supplied checkpoint.')
+        text_model_id = identity
+        roles = manifest.get('dataset', {}).get('people', {})
+        if any(not roles.get(role) for role in ('train', 'validation', 'calibration')):
+            raise ValueError('Text checkpoint lacks fitting-participant provenance.')
+        text_people = sorted({p for role in ('train', 'validation', 'calibration') for p in roles[role]})
     reference = fit_reference(reference_candidates, features, reference_cutoff,
                               minimum=config.reference_min_people, seed=config.seed)
     discovery = discover(pairs, config, reference, discovery_cutoff)
-    provisional = make_bundle(config, reference, discovery, text_model_id=text_model_id)
+    provisional = make_bundle(config, reference, discovery, text_model_id=text_model_id, text_fitted_people=text_people)
     rows, _ = score_cases(provisional, calibration_cases, method=method)
     calibration = calibrate(rows, config, reference, discovery, calibration_cutoff, method=method,
                             minimum_events=minimum_calibration_events, events=calibration_events, monitoring=calibration_monitoring)
-    return make_bundle(config, reference, discovery, calibration, text_model_id=text_model_id)
+    return make_bundle(config, reference, discovery, calibration, text_model_id=text_model_id, text_fitted_people=text_people)

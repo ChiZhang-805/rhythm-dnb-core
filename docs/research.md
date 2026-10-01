@@ -31,6 +31,18 @@
 
 ## 计算依据
 
+文本主模型固定为 **Qwen3-8B**，仅保留 **MacBERT-base** 作可选对照；这是依据公开研究与可部署性作出的选择，尚非本项目实测冠军。
+
+| 候选 | 比较结果 |
+| --- | --- |
+| Qwen3-8B | 纯文本架构、开放权重、可做 LoRA；2026 年情绪强度回归预印本直接使用该底座，支持其作为主候选。 |
+| MacBERT-base/large | 中文编码器成熟、训练成本低；通用中文任务成绩不能证明程度评分最佳。保留 base 衡量复杂模型的增益。 |
+| ChineseModernBERT / Qwen3.5 | 更新的通用中文编码或模型能力值得关注，但尚未找到足够直接证据证明对本研究的情绪强度和纵向波动更优，暂不增加主线。 |
+
+[SemEval 2025 官方结果](https://aclanthology.org/2025.semeval-1.327/)的中文强度任务中，组织者 RoBERTa 基线 Pearson 为 0.405，TeleAI 为 0.708，PAI 为 0.722。后两者使用大模型微调/集成，不能把成绩算到单个 8B 模型上；RoBERTa 也不等于 MacBERT。[Qwen3-8B 直接研究](https://arxiv.org/abs/2608.06425)使用英文数据、额外推理监督与强化学习，属于预印本；本项目的直接回归头不是该方法的复现。
+
+先用真实中文标注微调并单独校准“文本是否有依据”，同时检查 MAE、相关、一致性、预测/人工标准差比和同人变化。DNB 依赖波动与相关，不能只追求低误差；共同评分误差也可能制造假相关。公开 [BRIGHTER 数据](https://aclanthology.org/2025.acl-long.436/)可作外部对照，但没有覆盖本项目全部 17 项，不足以直接训练完整量化器。[MacBERT 论文](https://aclanthology.org/2020.findings-emnlp.58/)和 [Qwen 模型卡](https://huggingface.co/Qwen/Qwen3-8B)用于核对模型定义。
+
 - [Chen 等，2012，DNB 原始论文](https://doi.org/10.1038/srep00342)：临界转变前的波动与相关性信号。
 - [Liu 等，2017，单样本 DNB](https://doi.org/10.1371/journal.pcbi.1005633)：固定参考与个体网络扰动。
 

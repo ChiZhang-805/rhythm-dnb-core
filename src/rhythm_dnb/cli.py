@@ -57,11 +57,15 @@ def main(argv=None):
     validate.add_argument('--events', required=True)
     validate.add_argument('--monitoring', required=True)
     prepare = sub.add_parser('prepare'); prepare.add_argument('--input', required=True); prepare.add_argument('--output', required=True)
+    quantify = sub.add_parser('quantify'); quantify.add_argument('--input', required=True); quantify.add_argument('--output', required=True)
+    acquire = sub.add_parser('download-text'); acquire.add_argument('--config', required=True); acquire.add_argument('--output-dir', required=True); acquire.add_argument('--cache-dir', required=True)
+    plot = sub.add_parser('plot-text'); plot.add_argument('--result', required=True); plot.add_argument('--predictions', required=True); plot.add_argument('--output-dir', required=True)
     criteria = sub.add_parser('fit-endpoint'); criteria.add_argument('--input', required=True); criteria.add_argument('--study', required=True); criteria.add_argument('--cutoff', required=True); criteria.add_argument('--output', required=True)
     endpoint = sub.add_parser('endpoints'); endpoint.add_argument('--input', required=True); endpoint.add_argument('--study', required=True); endpoint.add_argument('--as-of', required=True); endpoint.add_argument('--output', required=True)
     train = sub.add_parser('train-text'); train.add_argument('--corpus', required=True); train.add_argument('--base', required=True); train.add_argument('--config', required=True); train.add_argument('--output-dir', required=True)
     text = sub.add_parser('score-text'); text.add_argument('--checkpoint', required=True); text.add_argument('--category', required=True); text.add_argument('--text', required=True); text.add_argument('--output', required=True)
     text.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
+    text.add_argument('--base', help='Exact local base weights required for Qwen adapters')
     args = parser.parse_args(argv)
     if args.command == 'hardware':
         from .text.runtime import hardware_report
@@ -78,17 +82,19 @@ def main(argv=None):
             if state.get(key):
                 state[key] = date.fromisoformat(state[key])
         result = RhythmPredictor.from_bundle(args.bundle).predict(parse_request(_read(args.request)), AlarmState(**state), method=args.method)
-    elif args.command == 'prepare':
+    elif args.command in ('prepare', 'quantify'):
         from .contracts import parse_observation
-        from .workflows.prepare import prepare_day
+        from .workflows.prepare import prepare_day, quantify_day
         payload = _read(args.input)
         payload['observations'] = [parse_observation(r) for r in payload['observations']]
         payload['day'] = date.fromisoformat(payload['day']); payload['issued_at'] = datetime.fromisoformat(payload['issued_at'])
         checkpoint = payload.pop('text_checkpoint', None)
+        text_base = payload.pop('text_base', None)
+        text_device = payload.pop('text_device', 'auto')
         if checkpoint is not None:
             from .text.predict import TextPredictor
-            payload['text_predictor'] = TextPredictor(checkpoint)
-        result = prepare_day(**payload)
+            payload['text_predictor'] = TextPredictor(checkpoint, base_path=text_base, device=text_device)
+        result = (prepare_day if args.command == 'prepare' else quantify_day)(**payload)
     elif args.command == 'fit-endpoint':
         from .config import load_study
         from .workflows.endpoints import fit_endpoint_criteria
@@ -118,6 +124,7 @@ def main(argv=None):
                  r.get('outcome_protocol_id')) for r in payload['pairs']]
         bundle = fit(references, pairs, _cases(payload['calibration']), load_study(args.study),
             **{k: payload[k] for k in ('reference_cutoff', 'discovery_cutoff', 'calibration_cutoff')}, text_model_id=payload.get('text_model_id'),
+            text_checkpoint=payload.get('text_checkpoint'),
             calibration_events=_events(payload.get('calibration_events')),
             calibration_monitoring=_monitoring(payload.get('calibration_monitoring')))
         print(canonical_json({'bundle': save_bundle(bundle, args.output_dir), 'status': bundle['calibration']['status']})); return 0
@@ -127,6 +134,12 @@ def main(argv=None):
         result = evaluate(load_bundle(args.bundle), _cases(_read(args.cases)), bootstrap_repetitions=args.bootstrap, evaluation_as_of=args.as_of,
                           events=_events(_read(args.events)) if args.events else None,
                           monitoring=_monitoring(_read(args.monitoring)) if args.monitoring else None)
+    elif args.command == 'download-text':
+        from .text.weights import acquire_base
+        print(canonical_json(acquire_base(_read(args.config), args.output_dir, args.cache_dir))); return 0
+    elif args.command == 'plot-text':
+        from .text.plots import plot_evaluation
+        print(canonical_json(plot_evaluation(_read(args.result), _read(args.predictions), args.output_dir))); return 0
     elif args.command == 'train-text':
         from .text.train import train as fit_text
         result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config))
@@ -135,6 +148,6 @@ def main(argv=None):
         return 0
     elif args.command == 'score-text':
         from .text.predict import TextPredictor
-        result = TextPredictor(args.checkpoint, device=args.device).predict(args.category, args.text)
+        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base).predict(args.category, args.text)
     save_report(result, args.output)
     print(canonical_json({'output': args.output})); return 0

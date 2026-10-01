@@ -3,7 +3,12 @@ from .schema import CATEGORIES, METRICS
 
 def encode(tokenizer,category,text,max_length):
     # PSEUDOCODE: tokenize category and text together -> reject overlength inputs without truncation.
-    result=tokenizer(CATEGORIES[category][0],text,add_special_tokens=True,truncation=False)
+    if 'token_type_ids' in tokenizer.model_input_names:
+        result=tokenizer(CATEGORIES[category][0],text,add_special_tokens=True,truncation=False)
+    else:
+        names='、'.join(next(m[2] for m in METRICS if m[0]==key) for key in CATEGORIES[category][1])
+        prompt=f'阅读真实的{CATEGORIES[category][0]}记录，评估{names}。信息不足的指标应保留未知。\n记录：{text}\n指标评分：'
+        result=tokenizer(prompt,add_special_tokens=True,truncation=False)
     if len(result['input_ids'])>max_length:
         raise ValueError(f'文本与类别共{len(result["input_ids"])}个token，超过{max_length}；不会静默截断，请缩短文本。')
     return result
@@ -37,6 +42,6 @@ class Collator:
         features,categories,scores,weights=zip(*items)
         batch=dict(self.tokenizer.pad(list(features),padding=True,return_tensors='pt'))
         batch['categories']=list(categories)
-        batch['labels']=torch.tensor([[score.get(m[0],0)/100 for m in METRICS] for score in scores],dtype=torch.float32)
+        batch['labels']=torch.tensor([[float('nan') if score.get(m[0]) is None else score[m[0]]/100 for m in METRICS] for score in scores],dtype=torch.float32)
         batch['sample_weights']=torch.tensor(weights,dtype=torch.float32)
         return batch

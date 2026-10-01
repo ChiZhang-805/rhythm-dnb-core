@@ -7,7 +7,8 @@ from ..contracts import DailyPanel, FeatureValue
 from ..timebase import available_as_of, local_boundary, instant
 from ..provenance import build_lineage
 from ..io.validation import validate_observations
-from ..measures.panel import get_panel, UNITS
+from ..measures.panel import get_panel, UNITS, ALL_MEASURES
+from ..text.schema import CATEGORIES
 from ..measures.sleep import daily_sleep, sleep_regularity
 from ..measures.eating import daily_eating, eating_regularity
 from ..measures.activity import daily_activity, activity_regularity
@@ -16,8 +17,18 @@ from ..measures.physiology import daily_physiology
 
 def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id='joint12',
                 sleep_complete=False, eating_complete=False, text_predictor=None):
+    # PSEUDOCODE: quantify every supported domain -> select the prespecified fixed DNB universe.
+    names = get_panel(panel_id)
+    all_values = quantify_day(observations, participant_id, day, zone, issued_at,
+        sleep_complete=sleep_complete, eating_complete=eating_complete, text_predictor=text_predictor)
+    features = {f.name: f for f in all_values.features}
+    return DailyPanel(participant_id, day, zone, tuple(features[name] for name in names))
+
+
+def quantify_day(observations, participant_id, day, zone, issued_at, *,
+                 sleep_complete=False, eating_complete=False, text_predictor=None):
     """Known acquisition variables: sleep_episode, caloric_event, activity_hour,
-    wear_minutes_hour, resting_hr_bpm, text:emotion/sleep/stress.
+    wear_minutes_hour, resting_hr_bpm, text:emotion/stress/diet/sleep/social.
 
     Sleep duration is time asleep inside the half-open research day. The main
     sleep midpoint belongs to its completion day and may precede that day's start.
@@ -31,12 +42,13 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
     if type(sleep_complete) is not bool or type(eating_complete) is not bool:
         raise ValueError('Coverage declarations must be explicit booleans.')
     rows = [r for r in observations if r.participant_id == participant_id and
-            r.timezone == zone and (begin < instant(r.end) <= cutoff or instant(r.start) == instant(r.end) == begin)
+            r.timezone == zone and ((begin <= instant(r.start) < cutoff) if instant(r.start) == instant(r.end)
+                                   else (begin < instant(r.end) <= cutoff))
             and available_as_of(r, cutoff, issued_at)]
     groups = {}
     for row in rows:
         groups.setdefault(row.variable, []).append(row)
-    values, parents, model_ids = {}, {}, {}
+    values, parents, model_ids, reasons = {}, {}, {}, {}
     sleeps = groups.get('sleep_episode', [])
     # A completed interval may cross 04:00: its known overlap still belongs to the previous day.
     duration_sources = [r for r in observations if r.participant_id == participant_id and r.timezone == zone
@@ -97,7 +109,7 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
     parents['resting_hr_bpm'] = resting
     # PSEUDOCODE: score only actual supplied descriptions; preserve their lineage and model identity.
     if text_predictor is not None:
-        for category in ('emotion', 'sleep', 'stress'):
+        for category in CATEGORIES:
             descriptions = groups.get('text:' + category, [])
             if len(descriptions) > 1:
                 raise ValueError('Multiple prompt responses need a prespecified aggregation protocol.')
@@ -108,13 +120,14 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
                 for key, value in result['scores'].items():
                     name = 'text_' + key; values[name] = value; parents[name] = descriptions
                     model_ids[name] = result['model_identity']
+                    reasons[name] = result.get('reasons', {}).get(key)
     features = []
-    for name in get_panel(panel_id):
+    for name in ALL_MEASURES:
         sources = parents.get(name, []); value = values.get(name)
         provenance = build_lineage([r.provenance for r in sources], 'prepare_day:' + name)
         features.append(FeatureValue(name, value, UNITS[name],
             max((instant(r.available_at) for r in sources), default=instant(issued_at)), provenance,
-            reason='missing_or_incomplete_source' if value is None else None,
+            reason=(reasons.get(name) or 'missing_or_incomplete_source') if value is None else None,
             coverage=(float(wearing.sum() / 1440) if name.startswith('activity_') and value is not None else 1. if value is not None else 0.),
             measured_until=min(cutoff, max((instant(r.end) for r in sources), default=cutoff)),
             model_id=model_ids.get(name)))

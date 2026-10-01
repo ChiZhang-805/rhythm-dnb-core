@@ -1,56 +1,101 @@
-"""Chinese encoder with fixed category heads and independently bounded scores."""
+"""Qwen text representations with bounded intensity and evidence heads; MacBERT is a comparator."""
 
 import torch
 from torch import nn
-from transformers import BertConfig,BertModel
-
-from .schema import CATEGORIES,METRICS
+from transformers import AutoConfig, AutoModel
+from .schema import CATEGORIES, METRICS
 
 
 class ScoringModel(nn.Module):
-    def __init__(self,encoder,dropout=0.1):
-        # PSEUDOCODE: attach encoder -> freeze unused pooler -> create one regression head per category.
+    def __init__(self, encoder, dropout=0.1):
+        # PSEUDOCODE: attach independent score/evidence heads -> freeze any unused encoder pooler.
         super().__init__()
-        self.encoder=encoder
-        if encoder.pooler is not None:
-            encoder.pooler.requires_grad_(False)  # The predictor uses CLS hidden state, not the pooler.
-        self.dropout=nn.Dropout(dropout)
-        self.heads=nn.ModuleDict({category:nn.Linear(encoder.config.hidden_size,len(keys))
-                                  for category,(_,keys) in CATEGORIES.items()})
+        self.encoder = encoder
+        if getattr(encoder, 'pooler', None) is not None:
+            encoder.pooler.requires_grad_(False)
+        self.dropout = nn.Dropout(dropout)
+        self.heads = nn.ModuleDict({c: nn.Linear(encoder.config.hidden_size, len(keys)) for c, (_, keys) in CATEGORIES.items()})
+        self.evidence_heads = nn.ModuleDict({c: nn.Linear(encoder.config.hidden_size, len(keys)) for c, (_, keys) in CATEGORIES.items()})
 
     @classmethod
-    def pretrained(cls,path,dropout=0.1):
-        # PSEUDOCODE: load pinned local encoder weights -> attach trainable category heads.
-        return cls(BertModel.from_pretrained(path,local_files_only=True),dropout)
+    def pretrained(cls, path, dropout=0.1, *, config=None, device=None, dtype=None, training=True):
+        # PSEUDOCODE: load local backbone -> optionally quantize frozen Qwen -> attach trainable LoRA and heads.
+        options = {'local_files_only': True, 'trust_remote_code': False}
+        config = config or {}
+        device = torch.device(device or 'cpu')
+        architecture = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+        qwen = architecture.model_type == 'qwen3'
+        quantized = qwen and config.get('quantization') == 'nf4'
+        if qwen:
+            options.update(torch_dtype=dtype or torch.float32, attn_implementation='sdpa')
+        if quantized:
+            if device.type != 'cuda':
+                raise ValueError('NF4 requires CUDA; select quantization=none explicitly for CPU experiments.')
+            from transformers import BitsAndBytesConfig
+            options.update(quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
+                           bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dtype or torch.float32),
+                           device_map={'': device.index if device.index is not None else torch.cuda.current_device()})
+        encoder = AutoModel.from_pretrained(path, **options)
+        if qwen:
+            encoder.config.use_cache = False
+            if training:
+                from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+                if quantized:
+                    encoder = prepare_model_for_kbit_training(encoder, use_gradient_checkpointing=False)
+                encoder = get_peft_model(encoder, LoraConfig(r=config['lora_rank'], lora_alpha=config['lora_alpha'],
+                    lora_dropout=config['dropout'], target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj',
+                    'gate_proj', 'up_proj', 'down_proj'], bias='none'))
+        model = cls(encoder, dropout)
+        model.heads.to(device); model.evidence_heads.to(device)
+        if not quantized:
+            model.to(device)
+        return model
 
     @classmethod
-    def from_config(cls,path,dropout=0.1):
-        # PSEUDOCODE: rebuild the recorded local encoder architecture before checkpoint restoration.
-        return cls(BertModel(BertConfig.from_pretrained(path,local_files_only=True)),dropout)
+    def from_config(cls, path, dropout=0.1):
+        # PSEUDOCODE: construct a local unquantized architecture before restoring full comparator weights.
+        return cls(AutoModel.from_config(AutoConfig.from_pretrained(path, local_files_only=True), trust_remote_code=False), dropout)
 
-    def forward(self,input_ids,attention_mask,token_type_ids=None):
-        # PSEUDOCODE: read CLS representation -> apply dropout -> bound every category score with sigmoid.
-        hidden=self.encoder(input_ids=input_ids,attention_mask=attention_mask,
-                            token_type_ids=token_type_ids).last_hidden_state[:,0]
-        hidden=self.dropout(hidden)
-        return {name:torch.sigmoid(head(hidden)) for name,head in self.heads.items()}
+    def forward(self, input_ids, attention_mask, token_type_ids=None):
+        # PSEUDOCODE: encode valid tokens -> pool CLS or last non-padding token -> score intensity and available evidence.
+        qwen = self.encoder.config.model_type == 'qwen3'
+        options = {'input_ids': input_ids, 'attention_mask': attention_mask}
+        if qwen:
+            options.update(position_ids=(attention_mask.long().cumsum(-1) - 1).clamp_min(0), use_cache=False)
+        elif token_type_ids is not None:
+            options['token_type_ids'] = token_type_ids
+        hidden = self.encoder(**options).last_hidden_state
+        if qwen:
+            positions = torch.arange(input_ids.shape[1], device=input_ids.device).expand_as(input_ids)
+            last = positions.masked_fill(~attention_mask.bool(), -1).max(dim=1).values
+            if (last < 0).any():
+                raise ValueError('A text sequence cannot consist entirely of padding.')
+            pooled = hidden[torch.arange(len(hidden), device=hidden.device), last]
+        else:
+            pooled = hidden[:, 0]
+        pooled = self.dropout(pooled.float())
+        result = {name: torch.sigmoid(head(pooled)) for name, head in self.heads.items()}
+        result['_evidence'] = {name: head(pooled) for name, head in self.evidence_heads.items()}
+        return result
 
 
-def regression_loss(outputs,labels,categories,delta=0.1,*,reduction='mean'):
-    # Average within each sample first so five-output tasks do not dominate one-output tasks.
-    # PSEUDOCODE: compute category-specific Huber errors -> average heads within each sample -> preserve DDP graph links.
-    losses=[None] * len(categories)
-    for category,(_,keys) in CATEGORIES.items():
-        indices=[i for i,c in enumerate(categories) if c==category]
+def regression_loss(outputs, labels, categories, delta=0.1, *, reduction='mean', evidence_weight=1.):
+    # PSEUDOCODE: mask unknown intensities -> learn evidence separately -> average per sample with all DDP heads linked.
+    losses = [None] * len(categories)
+    for category, (_, keys) in CATEGORIES.items():
+        indices = [i for i, c in enumerate(categories) if c == category]
         if indices:
-            columns=[next(i for i,m in enumerate(METRICS) if m[0]==key) for key in keys]
-            target=labels[indices][:,columns]
-            values=nn.functional.huber_loss(outputs[category][indices].float(),target.float(),
-                                           delta=delta,reduction='none').mean(dim=1)
-            for index,value in zip(indices,values):
-                losses[index]=value
-    if any(x is None for x in losses) or not categories or reduction not in ('mean','none'):
+            columns = [next(i for i, m in enumerate(METRICS) if m[0] == key) for key in keys]
+            target = labels[indices][:, columns]
+            known = torch.isfinite(target)
+            errors = nn.functional.huber_loss(outputs[category][indices].float(), target.nan_to_num(), delta=delta, reduction='none')
+            values = (errors * known).sum(dim=1) / known.sum(dim=1).clamp_min(1)
+            values += evidence_weight * nn.functional.binary_cross_entropy_with_logits(
+                outputs['_evidence'][category][indices].float(), known.float(), reduction='none').mean(dim=1)
+            for index, value in zip(indices, values):
+                losses[index] = value
+    if any(x is None for x in losses) or not categories or reduction not in ('mean', 'none'):
         raise ValueError('Every training sample needs exactly one supported category.')
-    # Every rank keeps all head parameters in the graph, including categories absent from its shard.
-    result=torch.stack(losses) + sum(value.float().sum() * 0 for value in outputs.values())
+    linked = list(outputs['_evidence'].values()) + [outputs[c] for c in CATEGORIES]
+    result = torch.stack(losses) + sum(value.float().sum() * 0 for value in linked)
     return result.mean() if reduction == 'mean' else result

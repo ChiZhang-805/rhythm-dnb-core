@@ -13,6 +13,7 @@ import json
 import math
 
 from .legacy_schema import validate_record
+from ...timebase import instant
 
 
 MIRROR_REVISION='2c97bcd6713edd075e1d88fa8401ca0b881c9464'
@@ -88,10 +89,10 @@ def _available_wellness(rows,anchor):
     eligible=[]
     for row in rows:
         try:
-            reported=datetime.fromisoformat(row['effective_time_frame'].replace('Z','+00:00'))
+            reported=instant(row['effective_time_frame'])
         except (KeyError,TypeError,ValueError):
             continue
-        age=(anchor-reported).total_seconds()
+        age=(instant(anchor)-reported).total_seconds()
         if 0<=age<=86400:
             eligible.append((reported,row))
     return max(eligible,key=lambda item:item[0]) if eligible else None
@@ -123,6 +124,7 @@ def build_records(root,participants=None):
         for score in scores:
             try:
                 anchor=datetime.fromisoformat(score['timestamp'].replace('Z','+00:00'))
+                instant(anchor)
                 date=anchor.date().isoformat()
             except (KeyError,TypeError,ValueError):
                 continue

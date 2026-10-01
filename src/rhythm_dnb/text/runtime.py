@@ -52,7 +52,7 @@ class TrainingRuntime:
                 raise ValueError('Launch multiple processes with torchrun.')
             if use_cuda and not distributed.is_nccl_available():
                 raise ValueError('Multi-GPU training requires Linux/WSL with the PyTorch NCCL backend.')
-            distributed.init_process_group('nccl' if use_cuda else 'gloo', timeout=timedelta(minutes=10))
+            distributed.init_process_group('nccl' if use_cuda else 'gloo', timeout=timedelta(minutes=self.config.get('process_timeout_minutes', 120)))
             self.owns_group = True
         if distributed.is_initialized():
             self.rank = distributed.get_rank()
@@ -113,12 +113,19 @@ class TrainingRuntime:
 
     def describe(self):
         # PSEUDOCODE: preserve actual device identities, precision and global batch size for reproducibility.
+        from importlib.metadata import version, PackageNotFoundError
+        libraries = {}
+        for name in ('transformers', 'peft', 'bitsandbytes', 'safetensors', 'numpy'):
+            try:
+                libraries[name] = version(name)
+            except PackageNotFoundError:
+                libraries[name] = None
         device = {'rank': self.rank, 'device': str(self.device), 'name': 'CPU', 'memory_bytes': None}
         if self.device.type == 'cuda':
             properties = torch.cuda.get_device_properties(self.device)
             device.update(name=properties.name, memory_bytes=properties.total_memory)
         return {'devices': self.gather(device), 'world_size': self.world_size, 'precision': self.precision,
-                'python': sys.version.split()[0], 'torch': torch.__version__, 'cuda_build': torch.version.cuda,
+                'python': sys.version.split()[0], 'torch': torch.__version__, 'cuda_build': torch.version.cuda, 'libraries': libraries,
                 'batch_size_per_device': self.config['batch_size'], 'gradient_accumulation': self.config['gradient_accumulation'],
                 'effective_batch_size': self.config['batch_size'] * self.config['gradient_accumulation'] * self.world_size,
                 'gradient_checkpointing': self.config['gradient_checkpointing']}

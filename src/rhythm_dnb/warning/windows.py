@@ -22,7 +22,7 @@ def panel_vector(panel, features, as_of):
         if unfinished:
             reason = 'unfinished_research_day'
         elif f is None or f.value is None:
-            reason = 'missing'
+            reason = f.reason if f is not None and f.reason else 'missing'
         elif type(f.value) not in (int, float) or not math.isfinite(f.value):
             reason = 'invalid_value'
         elif f.unit != UNITS.get(name, f.unit):

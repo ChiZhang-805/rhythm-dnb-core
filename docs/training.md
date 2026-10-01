@@ -1,48 +1,47 @@
 # 服务器训练
 
-GPU 以服务器实际可见设备为准，不写死型号、数量或显存。先按 [PyTorch 官方说明](https://pytorch.org/get-started/locally/) 安装匹配服务器驱动的 CUDA 运行环境，再安装本项目。训练和推理都从本地文件读取，不自动联网下载模型。
+唯一主模型是 `Qwen/Qwen3-8B`，固定提交见 `configs/text/qwen.json`。采用 NF4 冻结底座、LoRA 微调及独立的程度/证据评分头；不让模型自由生成数字。MacBERT-base 配置仅供对照，两者使用同一真实语料和划分。
 
-## 训练前
+## 准备和启动
 
-1. 在服务器执行 `python -m rhythm_dnb hardware`，确认设备名称、显存和 CUDA 是否可用。
-2. 准备按人隔离、审核通过的真实语料，格式见 [数据接入](data.md)。
-3. 准备 `configs/text/macbert.json` 指定上游提交的 MacBERT 编码器、分词器文件，以及 `download.json` 下载凭据。凭据包含 `model_id, revision, files`，其中 `files` 是“相对文件名 → SHA-256”；必须覆盖除凭据自身外的全部文件。程序校验清单和文件哈希，不能只填模型名称。
-4. 选择一个尚不存在的输出目录。数据和权重目录可放在服务器共享磁盘。
-
-## 启动
-
-以下为 Linux shell 命令，路径替换成服务器真实路径。
+先按 [PyTorch 官方说明](https://pytorch.org/get-started/locally/) 安装服务器驱动适配的 CUDA 环境，再安装 `.[research,text,quantized,io,plots]`。执行 `python -m rhythm_dnb hardware` 查看实际设备。以下为 Linux 命令，路径替换为服务器路径，输出目录必须尚不存在。
 
 ```sh
-# 单卡：只让程序看到指定 GPU
-CUDA_VISIBLE_DEVICES=0 python -m rhythm_dnb train-text \
-  --corpus /data/corpus.json --base /models/macbert \
-  --config configs/text/macbert.json --output-dir /runs/text-training
+# 显式下载固定提交的权重、分词器，并生成哈希凭据
+python -m rhythm_dnb download-text --config configs/text/qwen.json \
+  --output-dir /models/qwen --cache-dir /cache/huggingface
 
-# 同一台服务器的两张卡：每卡一个进程
+# 单卡；训练、校准、测试均读取本地文件
+CUDA_VISIBLE_DEVICES=0 python -m rhythm_dnb train-text \
+  --corpus /data/corpus.json --base /models/qwen \
+  --config configs/text/qwen.json --output-dir /runs/text-training
+
+# 同一台服务器两卡：每卡一个进程
 CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
   --module rhythm_dnb train-text \
-  --corpus /data/corpus.json --base /models/macbert \
-  --config configs/text/macbert.json --output-dir /runs/text-training-multigpu
+  --corpus /data/corpus.json --base /models/qwen \
+  --config configs/text/qwen.json --output-dir /runs/text-multigpu
 ```
 
-多卡采用 Linux/WSL 的 NCCL；Windows 支持单设备训练。此处准备的是单服务器多 GPU 流程，未提供跨服务器调度。
+多卡使用 Linux/WSL NCCL；Windows 支持单卡。每张卡都装入底座，多卡显存不会合并。建议优先在 24 GB 卡上部署；8 GB 卡是否能运行须实测，不承诺仅靠 NF4 就能容纳全部状态。NF4 依赖 bitsandbytes 和 CUDA；CPU 实验需显式改为 `quantization=none` 并准备足够内存。
 
-## 资源参数
+## 调参和产物
 
-| 配置 | 当前起点与调整方法 |
-| --- | --- |
-| `device` | `auto` 自动选择 CUDA，否则 CPU；正式 GPU 任务可设 `cuda`，无 GPU 时直接报错。 |
-| `precision` | `auto` 在所有参与卡支持时用 BF16，否则 GPU 用 FP16，CPU 用 FP32；也可手动指定。 |
-| `batch_size` | 每卡每次 2 条，给显存较小设备留出空间；在服务器测量峰值显存后调整。 |
-| `gradient_accumulation` | 累积 8 次再更新。有效批量 = 每卡批量 × 累积次数 × GPU 数量。 |
-| `gradient_checkpointing` | 默认开启，用额外计算降低激活值占用。 |
-| `num_workers` | 默认 0；CPU 和内存充足时再增加，避免每张卡重复启动大量加载进程。 |
+主模型起点：每卡批量 1、累积 16 次、最大 512 token、梯度检查点开启。有效批量为「每卡批量 × 累积次数 × 卡数」；两卡若保持 16，应把累积次数改为 8。超长文本报错，不静默截断。自动精度在所有参与卡支持时使用 BF16，否则 GPU 使用 FP16；溢出跳过更新会记录，整轮无有效更新则失败。
 
-默认单卡有效批量为 16。若改为两卡并希望仍为 16，可将累积次数设为 4；不能只增加卡数却忽略训练设置变化。显存不足时先减小每卡批量，再调整累积次数。最大文本长度 512，超长文本报错，不静默截断。每卡都保存完整模型，多卡显存不直接相加；混合型号的速度和可用批量受较慢、较小显存设备限制。
+多卡等待主进程验证和保存时，`process_timeout_minutes` 默认 120 分钟；超大验证集或慢共享磁盘需按实际耗时调整。运行记录同时保存 PyTorch、Transformers、PEFT 等库版本。
 
-`execution.json` 记录实际设备、精度和有效批量；`history.json` 记录损失、实际样本数、更新次数和溢出跳过次数；`result.json` 保存选定模型及最终测试结果。验证集负责选模型，测试集只在最后评价。检查点是已选模型权重，不包含完整优化器续训状态。
+参数的理由和调整范围见 [参数表](parameters.csv)。它们是待验证起点，不是已经寻优的最优值。先在验证集比较学习率、LoRA 秩、长度和损失权重；校准集只确定每个指标的证据接收门槛，测试集只在选定模型后使用一次。证据目标精度 0.95 是经验接收目标，不是总体保证；每类至少 20 条只是运行门槛。
 
-训练过程按真实样本数加权，不用重复样本填满最后一批；只有主进程写模型。CPU 双进程检查验证梯度合并；有 GPU 的检查还会实际训练并重新加载小模型。这些是软件验证，服务器多 GPU 性能和真实语料效果仍需在目标环境运行后报告。
+`execution.json` 记录设备和精度；`history.json` 记录每轮损失及更新；`model/` 保存适配器、评分头、分词器和文件哈希；`result.json` 与 `test-predictions.json` 保存测试结果（后者不含原文）。Qwen 推理必须同时提供原底座与适配器，不能随便换一个 `.pt/.pth` 文件。检查点不含完整优化器续训状态。
 
-实现依据：[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html) 和 [混合精度与梯度累积](https://docs.pytorch.org/docs/stable/notes/amp_examples.html)。
+```sh
+python -m rhythm_dnb score-text --checkpoint /runs/text-training/model \
+  --base /models/qwen --category stress --text '实际待分析文本' --output /runs/score.json
+python -m rhythm_dnb plot-text --result /runs/text-training/result.json \
+  --predictions /runs/text-training/test-predictions.json --output-dir /runs/text-figures
+```
+
+图表显示各项误差、证据覆盖、评分波动幅度、误差相关和人工/模型散点。需要 `observed_at` 的同人重复标注才能评价个人变化；横断面成绩不能替代这一项。小模型测试只验证软件，真实训练和服务器多卡性能须另行报告。
+
+实现依据：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-8B)、[QLoRA](https://arxiv.org/abs/2305.14314)、[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)。

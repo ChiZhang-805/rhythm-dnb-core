@@ -27,6 +27,38 @@ UTC = timezone.utc
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_endpoint_thresholds_reject_impossible_input_values(self):
+        from rhythm_dnb.outcomes.criteria import fit_criteria
+        t = datetime(2025, 1, 1, tzinfo=UTC)
+        for value in (True, -1., 1.1, float('nan'), float('inf')):
+            rows = [{'participant_id': str(i), 'anchor': {'S1': 0., 'E1': 0., 'A1': 0.},
+                'stable': True, 'evidence_id': str(i), 'available_at': t,
+                'values': [{'S1': 1., 'E1': 1., 'A1': value}]} for i in range(3)]
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                fit_criteria(rows, t, minimum_people=3)
+
+    def test_manchester_duration_uses_elapsed_time_through_dst(self):
+        import pandas as pd
+        from rhythm_dnb.io.sources.manchester import assemble_records, _local_datetime
+        for day, start, end, duration, allowed in (
+            ('2025-03-30', '00:00:00+00:00', '03:00:00+01:00', 150, False),
+            ('2025-10-26', '00:00:00+01:00', '02:00:00+00:00', 180, True)):
+            frame = pd.DataFrame([{'Id': 'p', 'startTime': day + 'T' + start, 'endTime': day + 'T' + end, 'sleepDuration': duration}])
+            if allowed:
+                self.assertEqual(assemble_records(frame, pd.DataFrame(), pd.DataFrame([{'Id': 'p'}]))[0]['sleep_duration_h'], 3.)
+            else:
+                with self.assertRaises(ValueError):
+                    assemble_records(frame, pd.DataFrame(), pd.DataFrame([{'Id': 'p'}]))
+        with self.assertRaises(ValueError):
+            _local_datetime('2025-10-26T01:30:00')
+
+    def test_legacy_schema_accepts_individually_unknown_text_scores(self):
+        from rhythm_dnb.io.sources.legacy_schema import validate_record
+        result = validate_record({'record_id': 'fixture', 'participant_id': 'p', 'observed_at': '2025-01-01T12:00:00+00:00',
+            'source_dataset': 'test-only', 'split': 'test', 'text_anxiety_intensity': 0., 'text_model_id': 'test-only'})
+        self.assertEqual(result['text_anxiety_intensity'], 0.)
+        self.assertIsNone(result['text_sadness_intensity'])
+
     def test_measurement_identity_ignores_prose_but_preserves_calculations(self):
         from rhythm_dnb.definitions import normalized_syntax
         first = 'def calculate(x):\n    return x + 1\n'

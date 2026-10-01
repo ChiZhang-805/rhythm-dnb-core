@@ -64,6 +64,15 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RhythmPredictor(self.bundle).predict(replace(request, issued_at=datetime(2025, 1, 1, 12, tzinfo=timezone.utc)))
 
+    def test_text_fitting_people_cannot_reenter_alarm_test_or_calibration(self):
+        request = self.cohort['test'][0].request
+        for person in (request.participant_id, self.bundle['calibration']['people'][0]):
+            bundle = deepcopy(self.bundle)
+            bundle['text_fitted_people'] = [person]
+            bundle['id'] = fingerprint({k: v for k, v in bundle.items() if k != 'id'})
+            with self.assertRaisesRegex(ValueError, 'fit|overlaps'):
+                RhythmPredictor(bundle).predict(request)
+
     def test_late_arrival_and_constructed_cells_abstain(self):
         request = self.cohort['test'][0].request; panel = request.history[0]
         for feature in (replace(panel.features[0], available_at=request.issued_at + timedelta(seconds=1)),

@@ -78,8 +78,10 @@ class TextTests(unittest.TestCase):
             predictor = TextPredictor(result['best_checkpoint'])
             prediction = predictor.predict('stress', '今天压力很大')
             self.assertEqual(set(prediction['scores']), {'stress_intensity'})
-            self.assertIsInstance(prediction['scores']['stress_intensity'], float)
-            self.assertNotEqual(prediction['scores']['stress_intensity'], round(prediction['scores']['stress_intensity']))
+            self.assertIsNone(prediction['scores']['stress_intensity'])
+            self.assertEqual(prediction['reasons']['stress_intensity'], 'uncalibrated_text_evidence')
+            self.assertIsInstance(prediction['estimates']['stress_intensity'], float)
+            self.assertNotEqual(prediction['estimates']['stress_intensity'], round(prediction['estimates']['stress_intensity']))
             self.assertEqual(result['test']['records'], 5)
             manifest, _ = inspect_checkpoint(result['best_checkpoint'])
             self.assertFalse(manifest['test_used_for_selection'])
@@ -87,7 +89,8 @@ class TextTests(unittest.TestCase):
             reloaded.load_state_dict(predictor.model.state_dict()); reloaded.eval()
             batch = tokenizer('压力', '今天压力很大', return_tensors='pt')
             with torch.inference_mode():
-                torch.testing.assert_close(reloaded(**batch)['stress'], predictor.model(**batch)['stress'])
+                predicted = predictor.model(**{k: v.to(predictor.device) for k, v in batch.items()})['stress'].cpu()
+                torch.testing.assert_close(reloaded(**batch)['stress'], predicted, atol=1e-5, rtol=1e-5)
             path = Path(result['best_checkpoint']) / 'manifest.json'
             damaged = json.loads(path.read_text(encoding='utf-8')); damaged['files'].pop('model.safetensors')
             path.write_text(json.dumps(damaged))

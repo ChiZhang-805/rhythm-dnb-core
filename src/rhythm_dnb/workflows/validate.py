@@ -29,7 +29,7 @@ def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None
         events = tuple(events)
         if any(instant(e.confirmed_at) > instant(evaluation_as_of) for e in events):
             raise ValueError('The event registry contains unconfirmed future outcomes.')
-        fitted = set(bundle['reference']['people'] + bundle['discovery']['people'] + calibration['people'])
+        fitted = set(bundle['reference']['people'] + bundle['discovery']['people'] + calibration['people'] + bundle['text_fitted_people'])
         if any(e.participant_id in fitted for e in events):
             raise ValueError('Event registry includes fitted participants.')
     rows, responses = score_cases(bundle, cases, method=calibration['method'])
@@ -39,7 +39,7 @@ def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None
     if monitoring is not None:
         monitoring = tuple(monitoring)
         from ..timebase import local_boundary
-        fitted = set(bundle['reference']['people'] + bundle['discovery']['people'] + calibration['people'])
+        fitted = set(bundle['reference']['people'] + bundle['discovery']['people'] + calibration['people'] + bundle['text_fitted_people'])
         if any(p.participant_id in fitted or instant(local_boundary(p.last_issue_day, p.timezone, hour=12)) > instant(evaluation_as_of) for p in monitoring):
             raise ValueError('Monitoring calendar overlaps fitting people or includes future days.')
     metrics = event_metrics(rows, calibration['threshold'], events=events, monitoring=monitoring, **policy)

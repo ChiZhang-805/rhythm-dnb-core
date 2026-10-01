@@ -15,6 +15,7 @@ import pandas as pd
 import pyreadr
 
 from .legacy_schema import validate_record
+from ...timebase import instant
 
 
 ARTICLE = 'https://pmc.ncbi.nlm.nih.gov/articles/PMC13354558/'
@@ -47,7 +48,11 @@ def _local_datetime(value):
             raise ValueError('Manchester sleep timestamp missing or invalid') from error
     if pd.isna(value) or not isinstance(value, datetime):
         raise ValueError('Manchester sleep timestamp missing or invalid')
-    return value.astimezone(TIMEZONE) if value.tzinfo else value.replace(tzinfo=TIMEZONE)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=TIMEZONE)
+        if value.replace(fold=0).utcoffset() != value.replace(fold=1).utcoffset():
+            raise ValueError('Manchester transition-hour timestamp needs its original UTC offset.')
+    return instant(value).astimezone(TIMEZONE)
 
 
 def _number(value, maximum):
@@ -92,7 +97,8 @@ def assemble_records(fitbit, diary, baseline):
             raise ValueError('Duplicate Manchester Fitbit wake date: ' + str(key))
         seen.add(key)
         duration = _number(row['sleepDuration'], 1440)
-        if end <= start or duration is None or duration > (end - start).total_seconds() / 60 + 1e-6:
+        elapsed = (instant(end) - instant(start)).total_seconds() / 60
+        if elapsed <= 0 or duration is None or duration > elapsed + 1e-6:
             raise ValueError('Invalid Manchester Fitbit sleep episode: ' + str(key))
         wake_date = end.date()
         anchor = datetime.combine(wake_date + timedelta(days=1), time(12), TIMEZONE)

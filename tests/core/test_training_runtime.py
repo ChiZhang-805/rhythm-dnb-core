@@ -75,3 +75,26 @@ class TrainingRuntimeTests(unittest.TestCase):
             self.assertEqual(result['test']['records'], 5)
             self.assertIn('cuda', result['execution']['devices'][0]['device'])
             self.assertTrue(Path(result['best_checkpoint']).is_dir())
+
+    @unittest.skipIf(sys.platform == 'win32', 'Distributed training is validated on Linux; Windows uses a single device')
+    def test_qwen_two_process_adapter_updates_match_global_batch(self):
+        from core.test_text_measurement import qwen_fixture
+        from safetensors.torch import load_file
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base, config, rows = qwen_fixture(root)
+            single = train(rows, base, root / 'single', config)
+            (root / 'training.json').write_text(json.dumps({**config, 'gradient_accumulation': 1}), encoding='utf-8')
+            (root / 'corpus.json').write_text(json.dumps(rows), encoding='utf-8')
+            worker = str(Path(__file__).resolve().parents[1] / 'support/train_worker.py')
+            process = subprocess.run([sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc-per-node=2', worker, str(root)],
+                env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'},
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
+            self.assertEqual(process.returncode, 0, process.stdout[-4000:] + process.stderr[-8000:])
+            other = json.loads((root / 'distributed/result.json').read_text(encoding='utf-8'))
+            self.assertEqual(other['history'][0]['training_samples'], 10)
+            for name in ('model.safetensors', 'adapter/adapter_model.safetensors'):
+                expected = load_file(str(Path(single['best_checkpoint']) / name))
+                actual = load_file(str(Path(other['best_checkpoint']) / name))
+                for key in expected:
+                    torch.testing.assert_close(actual[key], expected[key], rtol=1e-4, atol=2e-6, msg=key)
