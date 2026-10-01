@@ -61,7 +61,7 @@ def audit_legacy_store(path):
                   'rows_with_onset_field': onset_count, 'negative_rows_with_followup_field': negative_followup,
                   'snapshot_content_id': fingerprint(digests), 'database_modified': False,
                   'prospective_validation_ready': False,
-                  'qualification': 'Numeric cells only; metadata excluded. Missing v2 columns are not proof that raw sources cannot yield them. Legacy date buckets lack verified arrival times and endpoint confirmation; retrospective traceability is not prospective eligibility.'}
+                  'qualification': 'Numeric cells only; metadata excluded. Missing required columns are not proof that raw sources cannot yield them. Legacy date buckets lack verified arrival times and endpoint confirmation; retrospective traceability is not prospective eligibility.'}
         return result
     finally:
         db.close()

@@ -4,9 +4,10 @@ Times must be offset-aware. A missing value carries a reason; it is never zero.
 Scores are continuous statistics, not probabilities or clinical diagnoses.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
+from .definitions import MEASUREMENT_ID
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class FeatureValue:
     provenance: Provenance
     reason: str | None = None
     coverage: float = 1.0
-    version: str = '2'
+    measurement_id: str = MEASUREMENT_ID
     measured_until: datetime | None = None
     model_id: str | None = None
 
@@ -113,7 +114,7 @@ class OutcomeEvent:
     participant_id: str
     onset: datetime
     confirmed_at: datetime
-    version: str = 'SEA-v2'
+    definition: str = 'sleep-eating-activity'
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,8 @@ def parse_panel(payload):
     values['day'] = date.fromisoformat(values['day'])
     features = []
     for raw in values['features']:
+        if not raw.get('measurement_id'):
+            raise ValueError('Serialized features require their original measurement identity; rebuild missing identities from source.')
         item = dict(raw); provenance = dict(item['provenance'])
         provenance['parent_ids'] = tuple(provenance.get('parent_ids', ()))
         item['provenance'] = Provenance(**provenance)

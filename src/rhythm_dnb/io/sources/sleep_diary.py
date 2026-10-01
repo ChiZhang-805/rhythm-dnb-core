@@ -10,7 +10,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from hashlib import md5, sha256
 from pathlib import Path
-from urllib.request import urlopen
 
 from .legacy_schema import validate_record
 
@@ -26,7 +25,7 @@ HEADERS = ('wake', 'sleep', 'bedtime', 'holes', 'type', 'dreams', 'aid',
 
 
 def _read_sessions(path):
-    # PSEUDOCODE: validate inputs -> read sessions -> return the fixed semantic contract.
+    # PSEUDOCODE: locate the session header -> parse aware timestamps -> reject malformed or unordered sessions.
     with Path(path).open(encoding='utf-8-sig', newline='') as source:
         reader = csv.reader(source)
         for line, fields in enumerate(reader, 1):
@@ -49,7 +48,7 @@ def _read_sessions(path):
 
 
 def _hole_minutes(holes, session_minutes):
-    # PSEUDOCODE: validate inputs -> hole minutes -> return the fixed semantic contract.
+    # PSEUDOCODE: validate interruption intervals -> merge overlaps -> count awake minutes once.
     intervals = []
     for item in filter(None, holes.split('|')):
         start, end = map(int, item.split('-'))
@@ -65,7 +64,7 @@ def _hole_minutes(holes, session_minutes):
 
 
 def _clock(instant):
-    # PSEUDOCODE: validate inputs -> clock -> return the fixed semantic contract.
+    # PSEUDOCODE: convert supplied local clock seconds to fractional hours.
     return (instant.hour * 3600 + instant.minute * 60 + instant.second) / 3600
 
 
@@ -75,7 +74,7 @@ def build_records(path, expected_md5=PUBLISHED_MD5):
     The longest NIGHT_SLEEP is the daily anchor. Naps must have ended before
     that anchor's sleep onset, so the row never borrows a later event.
     """
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: verify diary bytes -> select main sleep -> subtract awake intervals -> retain only preceding naps.
     path = Path(path)
     payload = path.read_bytes()
     if expected_md5 and md5(payload).hexdigest() != expected_md5:

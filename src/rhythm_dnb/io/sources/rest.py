@@ -9,7 +9,6 @@ import csv
 from collections import defaultdict
 from datetime import date, timedelta
 from hashlib import sha256
-import json
 import math
 from pathlib import Path
 
@@ -28,7 +27,7 @@ NOMINAL_MONDAY = date(2000, 1, 3)
 
 
 def _group_days(path):
-    # PSEUDOCODE: validate inputs -> group days -> return the fixed semantic contract.
+    # PSEUDOCODE: preserve source order -> verify consecutive weekdays -> group responses by participant-relative day.
     by_person = defaultdict(list)
     with path.open(encoding='utf-8-sig', newline='') as source:
         for line, row in enumerate(csv.DictReader(source), 2):
@@ -55,13 +54,13 @@ def _group_days(path):
 
 
 def _agreed(entries, key):
-    # PSEUDOCODE: validate inputs -> agreed -> return the fixed semantic contract.
+    # PSEUDOCODE: retain the sole agreed nonempty value -> flag conflicting same-day responses.
     values = {row[key].strip() for _, row in entries if row[key] and row[key].strip()}
     return next(iter(values)) if len(values) == 1 else None, len(values) > 1
 
 
 def _number(value, minimum=0, maximum=None):
-    # PSEUDOCODE: validate inputs -> number -> return the fixed semantic contract.
+    # PSEUDOCODE: parse a finite source number -> reject values outside documented bounds.
     try:
         result = float(value)
     except (TypeError, ValueError):
@@ -72,7 +71,7 @@ def _number(value, minimum=0, maximum=None):
 
 
 def _clock(value):
-    # PSEUDOCODE: validate inputs -> clock -> return the fixed semantic contract.
+    # PSEUDOCODE: parse HH:MM:SS -> verify clock bounds -> return fractional local hour.
     if not value:
         return None
     parts = value.split(':')
@@ -89,7 +88,7 @@ def _clock(value):
 
 def build_records(root, verify=True):
     """One row per relative day; conflicting duplicate responses stay missing."""
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: verify the source digest -> retain relative dates explicitly -> convert only agreed measured fields.
     path = Path(root) / FILE
     digest = sha256(path.read_bytes()).hexdigest()
     if verify and digest != PUBLISHED_FILE_SHA256:
@@ -112,7 +111,7 @@ def build_records(root, verify=True):
                   'warnings': warnings, 'provenance': provenance}
 
         def source_value(key):
-            # PSEUDOCODE: validate inputs -> source value -> return the fixed semantic contract.
+            # PSEUDOCODE: resolve duplicate responses -> record a warning when conflicting values must remain missing.
             value, conflict = _agreed(entries, key)
             if conflict:
                 warnings.append(f'Duplicate same-day source values conflict for {key}; field omitted.')

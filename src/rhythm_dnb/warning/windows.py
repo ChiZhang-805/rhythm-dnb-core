@@ -1,6 +1,7 @@
 """Causal daily feature assembly; no outcomes or research modules are imported."""
 
 from datetime import timedelta
+from ..definitions import MEASUREMENT_ID
 import math
 import numpy as np
 from ..timebase import instant, local_boundary
@@ -8,7 +9,7 @@ from ..provenance import eligible_measurement
 from ..measures.panel import UNITS, CLOCKS
 
 
-def panel_vector(panel, features, as_of, *, simulation=False):
+def panel_vector(panel, features, as_of):
     # PSEUDOCODE: enforce the fixed universe, units, provenance and arrival time before extraction.
     mapping = {value.name: value for value in panel.features}
     if len(mapping) != len(panel.features):
@@ -26,13 +27,13 @@ def panel_vector(panel, features, as_of, *, simulation=False):
             reason = 'invalid_value'
         elif f.unit != UNITS.get(name, f.unit):
             reason = 'unit_mismatch'
-        elif f.version != '2':
-            reason = 'measurement_version_mismatch'
+        elif f.measurement_id != MEASUREMENT_ID:
+            reason = 'measurement_definition_mismatch'
         elif instant(f.available_at) > instant(as_of):
             reason = 'not_available'
         elif f.measured_until is None or instant(f.measured_until) < instant(local_boundary(panel.day, panel.timezone)) or instant(f.measured_until) > instant(local_boundary(panel.day + timedelta(days=1), panel.timezone)) or instant(f.measured_until) > instant(f.available_at):
             reason = 'unverified_measurement_cutoff'
-        elif not eligible_measurement(f.provenance, simulation=simulation):
+        elif not eligible_measurement(f.provenance):
             reason = 'ineligible_provenance'
         elif f.reason is not None or type(f.coverage) not in (int, float) or not 0 < f.coverage <= 1:
             reason = f.reason or 'no_coverage'
@@ -55,7 +56,7 @@ def panel_vector(panel, features, as_of, *, simulation=False):
 
 
 def select_window(history, participant_id, zone, last_day, features, as_of, *, days=28,
-                  minimum=23, max_missing_run=2, simulation=False):
+                  minimum=23, max_missing_run=2):
     # PSEUDOCODE: align to every calendar day -> retain explicit gaps -> gate complete-day coverage.
     if any(type(n) is not int for n in (days, minimum, max_missing_run)) or not 1 <= minimum <= days or max_missing_run < 0:
         raise ValueError('Invalid rolling window coverage policy.')
@@ -69,7 +70,7 @@ def select_window(history, participant_id, zone, last_day, features, as_of, *, d
     rows, current_run, longest = [], 0, 0
     for offset in range(days - 1, -1, -1):
         day = last_day - timedelta(days=offset)
-        row = panel_vector(mapping[day], features, as_of, simulation=simulation)[0] if day in mapping else np.full(len(features), np.nan)
+        row = panel_vector(mapping[day], features, as_of)[0] if day in mapping else np.full(len(features), np.nan)
         missing = not np.isfinite(row).all()
         current_run = current_run + 1 if missing else 0
         longest = max(longest, current_run)

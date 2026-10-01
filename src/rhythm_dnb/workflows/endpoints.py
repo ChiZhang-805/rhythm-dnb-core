@@ -5,6 +5,7 @@ normalized 24-hour activity profile. No DNB score or forecast enters this module
 """
 
 from dataclasses import dataclass
+from ..definitions import MEASUREMENT_ID
 from datetime import date, datetime, timedelta
 from ..contracts import Provenance
 from ..provenance import eligible_measurement, fingerprint
@@ -42,7 +43,7 @@ def build_endpoint_timeline(rows, baseline_start, criteria, config, *, as_of):
     for row in rows:
         if instant(row.available_at) < instant(local_boundary(row.day + timedelta(days=1), zone)):
             raise ValueError('Endpoint evidence precedes the end of measurement.')
-        if instant(row.available_at) <= instant(as_of) and eligible_measurement(row.provenance, simulation=config.simulation):
+        if instant(row.available_at) <= instant(as_of) and eligible_measurement(row.provenance):
             mapping[row.day] = row
     end_baseline = baseline_start + timedelta(days=config.baseline_days)
     if instant(local_boundary(end_baseline, zone)) > instant(as_of):
@@ -65,7 +66,7 @@ def build_endpoint_timeline(rows, baseline_start, criteria, config, *, as_of):
     events = detect_events(assessments, zone, persistence=config.persistence_days)
     protocol = {'criteria_id': criteria['id'], 'baseline_days': config.baseline_days,
                 'window': config.outcome_window, 'minimum': config.outcome_min_days,
-                'persistence': config.persistence_days, 'measurement_version': '2'}
+                'persistence': config.persistence_days, 'measurement_id': MEASUREMENT_ID}
     return {'participant_id': person, 'timezone': zone, 'anchor': anchor, 'baseline_available_at': baseline_available,
             'assessments': tuple(assessments), 'events': events, 'protocol_id': fingerprint(protocol)}
 

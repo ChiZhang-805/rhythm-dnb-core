@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import numpy as np
-from rhythm_dnb.research.simulate import simulate_cohort
+from support.cohort import make_cohort, _panel
 from rhythm_dnb.workflows.develop import develop
 from rhythm_dnb.workflows.validate import validate
 from rhythm_dnb.bundles import load_bundle, save_bundle, check_compatibility
@@ -21,17 +21,18 @@ from rhythm_dnb.research.calibrate import calibrate
 class WorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.cohort = simulate_cohort(people_per_role=20, development_people=200)
+        cls.cohort = make_cohort(people_per_role=20, development_people=200)
         c = cls.cohort
         cls.bundle = develop(c['reference'], c['pairs'], c['calibration'], c['config'],
-            **{k: c[k] for k in ('reference_cutoff', 'discovery_cutoff', 'calibration_cutoff')})
+            **{k: c[k] for k in ('reference_cutoff', 'discovery_cutoff', 'calibration_cutoff', 'calibration_events', 'calibration_monitoring')})
 
     def test_complete_research_chain(self):
         self.assertTrue(self.bundle['discovery']['modules'])
         self.assertIsNotNone(self.bundle['calibration']['threshold'])
         result = validate(self.bundle, self.cohort['test'], bootstrap_repetitions=10,
-                          evaluation_as_of=datetime(2025, 10, 1, tzinfo=timezone.utc))
-        self.assertEqual(result['domain'], 'synthetic')
+                          evaluation_as_of=datetime(2025, 10, 1, tzinfo=timezone.utc),
+                          events=self.cohort['test_events'], monitoring=self.cohort['test_monitoring'])
+        self.assertEqual(result['domain'], 'source_backed')
         self.assertFalse(result['clinical_validation'])
         self.assertEqual(result['metrics']['events'], 10)
 
@@ -81,7 +82,9 @@ class WorkflowTests(unittest.TestCase):
     def test_discovery_requires_all_three_conditions(self):
         c = self.cohort
         # Identical states have exactly no changes, so bootstrapping cannot invent a DNB.
-        pairs = [replace(p, pre_event=p.stable) for p in c['pairs']]
+        pairs = [replace(p, pre_event=p.stable,
+                         pre_event_panel=_panel(p.participant_id, p.pre_event_panel.day, p.stable,
+                                                self.bundle['reference']['features'])) for p in c['pairs']]
         result = discover(pairs, c['config'], self.bundle['reference'], c['discovery_cutoff'])
         self.assertEqual(result['modules'], [])
 
@@ -94,7 +97,8 @@ class WorkflowTests(unittest.TestCase):
     def test_test_labels_cannot_be_known_early(self):
         with self.assertRaises(ValueError):
             validate(self.bundle, self.cohort['test'], bootstrap_repetitions=0,
-                     evaluation_as_of=datetime(2025, 8, 1, tzinfo=timezone.utc))
+                     evaluation_as_of=datetime(2025, 8, 1, tzinfo=timezone.utc),
+                     events=self.cohort['test_events'], monitoring=self.cohort['test_monitoring'])
 
     def test_rolling_needs_own_calibration(self):
         request = self.cohort['test'][0].request

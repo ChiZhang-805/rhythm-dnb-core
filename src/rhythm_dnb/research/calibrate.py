@@ -25,9 +25,9 @@ def calibrate(rows, config, reference, discovery, cutoff, *, method='single_samp
         raise ValueError('Calibration monitoring calendar contains future days.')
     if any(r.label is not None and (r.label_available_at is None or instant(r.label_available_at) > instant(cutoff)) for r in rows):
         raise ValueError('Calibration labels are not yet known at cutoff.')
-    if not config.simulation and events is None:
+    if events is None:
         raise ValueError('Primary real-data calibration requires an independent confirmed-event registry.')
-    if not config.simulation and monitoring is None:
+    if monitoring is None:
         raise ValueError('Primary real-data calibration requires an independently registered monitoring calendar.')
     if registry is not None and any(instant(e.confirmed_at) > instant(cutoff) or e.participant_id not in people for e in registry):
         raise ValueError('Calibration event registry has unavailable or out-of-partition events.')

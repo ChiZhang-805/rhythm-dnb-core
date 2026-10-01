@@ -7,10 +7,8 @@ Use the hospital/normalized adapter after supplying verified time and lineage.
 
 from datetime import datetime, time, timedelta
 from hashlib import sha256
-import json
 import math
 from pathlib import Path
-from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -33,7 +31,7 @@ TIMEZONE = ZoneInfo('Europe/London')
 
 
 def _read_frame(path, expected_name):
-    # PSEUDOCODE: validate inputs -> read frame -> return the fixed semantic contract.
+    # PSEUDOCODE: load the supplied RData file -> require exactly the named published data frame.
     objects = pyreadr.read_r(str(path))
     if set(objects) != {expected_name}:
         raise ValueError('Unexpected Manchester RData objects: ' + str(path))
@@ -41,7 +39,7 @@ def _read_frame(path, expected_name):
 
 
 def _local_datetime(value):
-    # PSEUDOCODE: validate inputs -> local datetime -> return the fixed semantic contract.
+    # PSEUDOCODE: parse source timestamps -> express them in the study local timezone.
     if isinstance(value, str):
         try:
             value = datetime.fromisoformat(value)
@@ -53,7 +51,7 @@ def _local_datetime(value):
 
 
 def _number(value, maximum):
-    # PSEUDOCODE: validate inputs -> number -> return the fixed semantic contract.
+    # PSEUDOCODE: reject missing/boolean/nonfinite cells -> retain values within the source bounds.
     if isinstance(value, bool) or pd.isna(value):
         return None
     try:
@@ -64,13 +62,13 @@ def _number(value, maximum):
 
 
 def _hour(value):
-    # PSEUDOCODE: validate inputs -> hour -> return the fixed semantic contract.
+    # PSEUDOCODE: convert the local clock to a fractional hour without changing its calendar date.
     return value.hour + value.minute / 60 + value.second / 3600
 
 
 def assemble_records(fitbit, diary, baseline):
     """Keep labels empty; source eligibility is not a clinical negative diagnosis."""
-    # PSEUDOCODE: validate inputs -> assemble records -> return the fixed semantic contract.
+    # PSEUDOCODE: join participant and night records -> prefer sensor sleep -> leave independent outcomes unknown.
     participants = {str(row['Id']) for _, row in baseline.iterrows()}
     diary_by_night = {}
     for position, (_, row) in enumerate(diary.iterrows(), 2):
@@ -141,7 +139,7 @@ def assemble_records(fitbit, diary, baseline):
 
 
 def build_records(root, verify=True):
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: verify all source digests -> load named frames -> cross-check the published population.
     root = Path(root)
     for name, expected in FILES.items():
         path = root / name

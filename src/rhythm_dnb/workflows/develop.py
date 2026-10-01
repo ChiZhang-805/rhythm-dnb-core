@@ -24,7 +24,7 @@ def score_cases(bundle, cases, *, method='single_sample'):
     # PSEUDOCODE: send only requests to inference -> attach outcomes after scoring -> keep per-person state.
     predictor = RhythmPredictor(bundle); states, rows, responses = {}, [], []
     for case in sorted(cases, key=lambda c: (c.request.participant_id, instant(c.request.issued_at))):
-        if not predictor.config.simulation and (not case.outcome_protocol_id or case.outcome_protocol_id != bundle['discovery'].get('outcome_protocol_id')):
+        if not case.outcome_protocol_id or case.outcome_protocol_id != bundle['discovery'].get('outcome_protocol_id'):
             raise ValueError('Forecast evaluation and discovery must use the same frozen endpoint definition.')
         request = case.request
         response = predictor.predict(request, states.get(request.participant_id), method=method)
@@ -41,7 +41,7 @@ def develop(reference_candidates, pairs, calibration_cases, config, *, reference
     # PSEUDOCODE: freeze reference -> discover modules -> score independent calibration -> freeze policy.
     features = get_panel(config.panel_id)
     reference = fit_reference(reference_candidates, features, reference_cutoff,
-                              minimum=config.reference_min_people, seed=config.seed, simulation=config.simulation)
+                              minimum=config.reference_min_people, seed=config.seed)
     discovery = discover(pairs, config, reference, discovery_cutoff)
     provisional = make_bundle(config, reference, discovery, text_model_id=text_model_id)
     rows, _ = score_cases(provisional, calibration_cases, method=method)

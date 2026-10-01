@@ -1,4 +1,4 @@
-"""Exportable diagnostic figures; never infer validation from a synthetic plot."""
+"""Export measurement distributions and network diagnostics from caller-supplied data."""
 
 from pathlib import Path
 import numpy as np
@@ -8,11 +8,13 @@ def _save(figure, path):
     # PSEUDOCODE: create new PNG and SVG artifacts with matching stems; preserve prior evidence.
     import matplotlib.pyplot as plt
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-    for suffix in ('.png', '.svg'):
-        output = path.with_suffix(suffix)
-        with output.open('xb') as stream:
-            figure.savefig(stream, format=suffix[1:], dpi=150, bbox_inches='tight')
-    plt.close(figure)
+    try:
+        for suffix in ('.png', '.svg'):
+            output = path.with_suffix(suffix)
+            with output.open('xb') as stream:
+                figure.savefig(stream, format=suffix[1:], dpi=150, bbox_inches='tight')
+    finally:
+        plt.close(figure)
     return str(path.with_suffix('.png'))
 
 
@@ -20,6 +22,8 @@ def plot_source_coverage(audit, path):
     # PSEUDOCODE: divide traceable numeric cells by source rows -> show missing evidence explicitly.
     import matplotlib.pyplot as plt
     sources, fields = sorted(audit['sources']), audit['numeric_fields']
+    if not sources or not fields:
+        raise ValueError('Source coverage needs at least one source and one numeric field.')
     matrix = np.array([[audit['traceable_by_source'].get(s, {}).get(k, 0) / audit['sources'][s] for k in fields] for s in sources])
     figure, axis = plt.subplots(figsize=(19, 6), layout='constrained')
     image = axis.imshow(matrix, vmin=0, vmax=1, cmap='Blues', aspect='auto')
@@ -64,12 +68,18 @@ def plot_network_diagnostics(matrices, feature_names, module, path, *, provenanc
     # PSEUDOCODE: display signed Pearson matrices and independently computed DNB components.
     import matplotlib.pyplot as plt
     from ..dnb.classic import dnb_components
+    if not matrices:
+        raise ValueError('At least one observed matrix is required.')
     figure, axes = plt.subplots(2, len(matrices), figsize=(5 * len(matrices), 8), layout='constrained', squeeze=False)
     evidence = {}
     for j, (name, values) in enumerate(matrices.items()):
         x = np.asarray(values, dtype=float)
         result = dnb_components(x, feature_names, module); evidence[name] = result
-        correlation = np.corrcoef(x[np.isfinite(x).all(axis=1)], rowvar=False)
+        complete = x[np.isfinite(x).all(axis=1)]
+        correlation = np.full((len(feature_names), len(feature_names)), np.nan)
+        if len(complete) >= 2:
+            with np.errstate(invalid='ignore', divide='ignore'):
+                correlation = np.corrcoef(complete, rowvar=False)
         image = axes[0, j].imshow(correlation, cmap='coolwarm', vmin=-1, vmax=1)
         axes[0, j].set_xticks(range(len(feature_names)), feature_names, rotation=45)
         axes[0, j].set_yticks(range(len(feature_names)), feature_names)
@@ -86,3 +96,27 @@ def plot_network_diagnostics(matrices, feature_names, module, path, *, provenanc
         axis.set_ylabel('SD: latent units; PCC: unitless')
     figure.suptitle(provenance_label + '\nDNB uses absolute correlations; heatmaps retain their directions')
     return {'figure': _save(figure, path), 'components': evidence}
+
+
+def plot_pair_scatter(values, feature_names, pairs, path, *, provenance_label):
+    # PSEUDOCODE: select named pairs -> retain finite paired observations -> show direction and actual counts.
+    import matplotlib.pyplot as plt
+    from ..dnb.statistics import _numeric
+    names = tuple(feature_names)
+    x = _numeric(values, 2, 'scatter matrix')
+    if len(set(names)) != len(names) or x.shape[1] != len(names) or not pairs:
+        raise ValueError('Scatter plots need unique feature names and at least one pair.')
+    if any(len(pair) != 2 or pair[0] == pair[1] or not set(pair) <= set(names) for pair in pairs):
+        raise ValueError('Unknown or repeated scatter feature.')
+    figure, axes = plt.subplots(1, len(pairs), figsize=(5 * len(pairs), 4), layout='constrained', squeeze=False)
+    evidence = []
+    for axis, (first, second) in zip(axes.flat, pairs):
+        pair = x[:, [names.index(first), names.index(second)]]
+        pair = pair[np.isfinite(pair).all(axis=1)]
+        correlation = float(np.corrcoef(pair, rowvar=False)[0, 1]) if len(pair) >= 2 and np.all(np.std(pair, axis=0) > 0) else None
+        axis.scatter(pair[:, 0], pair[:, 1], s=16, alpha=.6)
+        axis.set_xlabel(first); axis.set_ylabel(second)
+        axis.set_title(f'n={len(pair)}, r={correlation:.3f}' if correlation is not None else f'n={len(pair)}, correlation unavailable')
+        evidence.append({'pair': [first, second], 'n': len(pair), 'correlation': correlation})
+    figure.suptitle(provenance_label + '\nPairwise finite observations; descriptive association only')
+    return {'figure': _save(figure, path), 'pairs': evidence}

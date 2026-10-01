@@ -8,7 +8,7 @@ from ..timebase import instant, local_boundary
 
 def future_label(issued_at, events, *, followup_end, observed_days, horizon_days=7,
                  min_lead_hours=24, confirmation_days=2, label_as_of=None, timezone='UTC'):
-    """observed_days are local research-day dates of evaluable assessments (v2).
+    """observed_days are local research-day dates of evaluable assessments.
 
     Negative labels need full follow-up through horizon + confirmation days;
     unknown coverage, unconfirmed outcomes and prevalent events never become zero.

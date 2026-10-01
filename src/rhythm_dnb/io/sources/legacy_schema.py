@@ -82,7 +82,7 @@ _BOUNDS={
 
 
 def _feature_spec(field):
-    # PSEUDOCODE: validate inputs -> feature spec -> return the fixed semantic contract.
+    # PSEUDOCODE: translate collection field metadata into nullable quantitative units and bounds.
     source=field['key']
     key=CLOCK_SOURCES.get(source,source)
     kind={'count':'count','binary':'binary','score10':'ordinal','score5':'ordinal'}.get(field['type'],'continuous')
@@ -117,12 +117,12 @@ _ISO_DATETIME=re.compile(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6
 
 
 def _missing(value):
-    # PSEUDOCODE: validate inputs -> missing -> return the fixed semantic contract.
+    # PSEUDOCODE: recognize null and documented workbook missing markers without inventing zero.
     return value is None or isinstance(value,str) and value.strip().lower() in _MISSING
 
 
 def _number(value,key):
-    # PSEUDOCODE: validate inputs -> number -> return the fixed semantic contract.
+    # PSEUDOCODE: reject booleans and nonfinite inputs -> parse supported numeric representations.
     if isinstance(value,bool) or not isinstance(value,(Real,Decimal,str)):
         raise ValueError(f'{key}: expected a finite number')
     try:
@@ -135,7 +135,7 @@ def _number(value,key):
 
 
 def _feature_value(value,key):
-    # PSEUDOCODE: validate inputs -> feature value -> return the fixed semantic contract.
+    # PSEUDOCODE: retain missingness -> enforce units/bounds -> require exact integers for discrete fields.
     if _missing(value):
         return None
     spec=_SPEC_BY_KEY[key]
@@ -155,7 +155,7 @@ def _feature_value(value,key):
 
 
 def _timestamp(value,key,require_timezone=True):
-    # PSEUDOCODE: validate inputs -> timestamp -> return the fixed semantic contract.
+    # PSEUDOCODE: parse a full ISO date-time -> require an offset when used as a real timestamp.
     if isinstance(value,datetime):
         result=value
     elif isinstance(value,str) and _ISO_DATETIME.fullmatch(value.strip()):
@@ -178,7 +178,7 @@ def validate_record(record:dict,require_identity=True)->dict:
     and the collection's missing markers are accepted for workbook ingestion.
     Clock hours are local values in [0,24). Truth dates never become features.
     """
-    # PSEUDOCODE: validate inputs -> validate record -> return the fixed semantic contract.
+    # PSEUDOCODE: reject unknown fields -> normalize identities and values -> retain copied source evidence.
     if not isinstance(record,dict):
         raise ValueError('record: expected a dict')
     unknown=set(record)-set(RECORD_KEYS)-{'warnings','provenance'}

@@ -1,5 +1,5 @@
 parameter,default,location,role,rationale,adjustment
-study_id,behavioral-rhythm-v2,StudyConfig,版本身份,量化与方案需可追溯,变更方案使用新ID并重新冻结
+study_id,behavioral-rhythm,StudyConfig,研究名称,计算规则以内容指纹追溯,沿用项目名称；修改计算后重建和校准产物
 panel_id,joint12,StudyConfig,研究选择,预定义12节点及objective8对照,预登记选择并分别校准不可按测试表现挑选
 baseline_days,14,StudyConfig,待验证研究默认,多个完整周的个人基线,14或21或28且保持足够端点窗口
 outcome_window,7,StudyConfig,端点定义,一周行为离散度,7或14须重建结局
@@ -27,13 +27,12 @@ calibration_min_negative_days,30,StudyConfig,最小运行门槛,防止极少阴�
 epsilon,1e-8,StudyConfig,数值保护,近零分母拒判而非加常数放大指数,1e-10或1e-8或1e-6报告拒判率
 seed,20261001,StudyConfig,复现,固定随机抽样路径,不能挑表现好的seed采用预登记种子集合
 pair_convention,paper_k_squared,StudyConfig,论文约定,sDNB论文式组内K平方均值,unique_pairs仅作明确不同约定需重校准
-simulation,false,StudyConfig,数据资格,真实和合成研究分开,true仅用于机制与工程测试
 model_id,hfl/chinese-macbert-base,configs/text/macbert.json,模型身份,现有中文编码器选择非证明最优,比较模型须独立语料评价
 revision,a986e004d2a7f2a1c2f5a3edef4e20604a974ed1,configs/text/macbert.json,复现,固定上游模型commit,变更需重新训练和验证
 text_seed,20260929,configs/text/macbert.json,复现,固定训练随机过程,重复种子报告波动不择优
 max_length,512,configs/text/macbert.json,模型上限,编码器上下文及禁止静默截断,只能在模型容量内并报告超长比例
-batch_size,8,configs/text/macbert.json,资源与优化,当前GPU运行设置,4或8或16与累积联合比较
-gradient_accumulation,2,configs/text/macbert.json,资源与优化,有效批量并对尾批按实际样本数加权,1或2或4
+batch_size,2,configs/text/macbert.json,每卡资源设置,给显存较小的服务器 GPU 留出空间,1或2或4实测显存后调整并保持选定有效批量
+gradient_accumulation,8,configs/text/macbert.json,有效批量设置,每卡批量乘累积次数乘GPU数；尾批按实数加权,单卡2乘8为16；两卡可用2乘4乘2保持16
 epochs,12,configs/text/macbert.json,优化预算,验证集早停的最大轮数,6或12或20只看验证组
 patience,3,configs/text/macbert.json,早停,限制验证不改善轮次,2或3或5
 encoder_lr,0.00002,configs/text/macbert.json,待验证优化默认,预训练编码器微调起点,1e-5或2e-5或3e-5
@@ -45,9 +44,9 @@ dropout,0.1,configs/text/macbert.json,正则,现有编码器回归头起点,0或
 max_grad_norm,1.0,configs/text/macbert.json,数值优化,梯度范数裁剪不代表模型输出上限,0.5或1或2并检查梯度统计
 threads,4,configs/text/macbert.json,资源,CPU线程设置,按环境调整不作科学选择
 device,auto,configs/text/macbert.json,资源,cpu或cuda或auto,记录硬件及库版本
-minimum_hour_wear,45,measures/activity.py,测量规则,每小时最低实戴分钟,30或45或60需要新量化版本
-minimum_day_wear,1200,measures/activity.py,测量规则,全天最低20小时且仍须完整合格小时,1200或1320或1440需新量化版本
-day_boundary_hour,4,timebase.local_boundary,日定义,固定研究日边界,变更须贯穿窗口事件评估并提升版本
+minimum_hour_wear,45,measures/activity.py,测量规则,每小时最低实戴分钟,30或45或60须重建量化产物
+minimum_day_wear,1200,measures/activity.py,测量规则,全天最低20小时且仍须完整合格小时,1200或1320或1440须重建量化产物
+day_boundary_hour,4,timebase.local_boundary,日定义,固定研究日边界,变更须贯穿窗口事件评估并重新校准
 issue_hour,12,timebase.forecast_bounds,发布安排,日界线后等待上传,变更不是单纯改一个常数需全链路测试
 sd_ddof,1,dnb/statistics.py,数学约定,样本标准差,不作为预测调参
 M10_hours,10,measures/activity.py,指标定义,经典最活跃10小时,改变时长须改指标名称
@@ -62,3 +61,6 @@ cluster_ci_repetitions,1000,research/evaluate.py,计算精度,以完整参与者
 linear_C,0.01;0.1;1;10,research/baselines.py,比较模型搜索,开发集按人分组搜索,避免外层测试泄漏
 spline_degree,2;3,research/baselines.py,比较模型搜索,允许非线性程度关系,同时比较结点3或5与C为0.1或1
 tree_leaves,3;7,research/baselines.py,比较模型搜索,低复杂度梯度提升树起点,L2为1或10并报告各候选
+precision,auto,configs/text/macbert.json,GPU数值精度,各卡均支持时用BF16；否则GPU用FP16,auto或fp32或fp16或bf16；报告数值误差与溢出
+gradient_checkpointing,true,configs/text/macbert.json,显存与速度,重算中间激活以降低显存占用,显存充足时可关闭并比较吞吐量
+num_workers,0,configs/text/macbert.json,加载资源,避免每卡重复占用过多CPU与内存,0或2或4按服务器实测吞吐量调整

@@ -8,7 +8,7 @@ from rhythm_dnb.config import StudyConfig
 from rhythm_dnb.contracts import EvaluationDay
 from rhythm_dnb.dnb.reference import fit_reference
 from rhythm_dnb.measures.panel import get_panel
-from rhythm_dnb.research.simulate import simulate_cohort
+from support.cohort import make_cohort
 from rhythm_dnb.research.baselines import fit_baselines, deviation_and_trend
 from rhythm_dnb.research.calibrate import calibrate
 from rhythm_dnb.warning.windows import select_window
@@ -17,28 +17,28 @@ from rhythm_dnb.warning.windows import select_window
 class ResearchGuardTests(unittest.TestCase):
     def test_invalid_study_choices_rejected(self):
         for settings in ({'reference_min_people': 8}, {'rolling_min_days': 29}, {'module_sizes': (2, 2)},
-                         {'epsilon': float('nan')}, {'simulation': 1}, {'min_lead_hours': 200}):
+                         {'epsilon': float('nan')}, {'seed': True}, {'seed': -1}, {'min_lead_hours': 200}):
             with self.subTest(settings=settings), self.assertRaises(ValueError):
                 StudyConfig(**settings)
 
     def test_reference_ignores_unavailable_stability_evidence(self):
-        cohort = simulate_cohort(people_per_role=4)
+        cohort = make_cohort(people_per_role=4)
         rows = list(cohort['reference'])
         rows[0] = replace(rows[0], stability_available_at=datetime(2030, 1, 1, tzinfo=timezone.utc))
         with self.assertRaises(ValueError):
-            fit_reference(rows, get_panel('objective8'), cohort['reference_cutoff'], simulation=True)
+            fit_reference(rows, get_panel('objective8'), cohort['reference_cutoff'])
         with self.assertRaises(ValueError):
-            fit_reference(cohort['reference'] + cohort['reference'][:1], get_panel('objective8'), cohort['reference_cutoff'], simulation=True)
+            fit_reference(cohort['reference'] + cohort['reference'][:1], get_panel('objective8'), cohort['reference_cutoff'])
 
     def test_single_sample_calibration_cannot_use_unknown_labels(self):
         t = datetime(2025, 1, 1, 12, tzinfo=timezone.utc)
         row = EvaluationDay('p', t, 3., 0, label_available_at=t + timedelta(days=9))
         with self.assertRaises(ValueError):
-            calibrate([row], StudyConfig(simulation=True), {'people': [], 'id': 'r'},
+            calibrate([row], StudyConfig(), {'people': [], 'id': 'r'},
                       {'people': [], 'id': 'd', 'modules': []}, t + timedelta(days=2))
 
     def test_rolling_gap_counts_missing_days_not_rows(self):
-        cohort = simulate_cohort(people_per_role=4)
+        cohort = make_cohort(people_per_role=4)
         base = cohort['test'][0].request.history[0]
         # Missing three calendar days cannot be hidden by supplying 23 dense rows.
         last = base.day + timedelta(days=27)
@@ -51,7 +51,7 @@ class ResearchGuardTests(unittest.TestCase):
                 for f in base.features))
             history.append(panel)
         _, reason = select_window(history, base.participant_id, 'UTC', last, get_panel('objective8'),
-            datetime(2026, 1, 1, tzinfo=timezone.utc), simulation=True)
+            datetime(2026, 1, 1, tzinfo=timezone.utc))
         self.assertEqual(reason, 'missing_run_too_long')
 
     def test_nonlinear_comparator_is_selected_when_signal_is_curved(self):

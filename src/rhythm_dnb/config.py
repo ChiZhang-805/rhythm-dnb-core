@@ -1,6 +1,6 @@
-"""Versioned study choices; no data fitting or working-directory path guessing."""
+"""Registered study choices; no data fitting or working-directory path guessing."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 import math
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class StudyConfig:
-    study_id: str = 'behavioral-rhythm-v2'
+    study_id: str = 'behavioral-rhythm'
     panel_id: str = 'joint12'
     baseline_days: int = 14
     outcome_window: int = 7
@@ -37,7 +37,6 @@ class StudyConfig:
     epsilon: float = 1e-8
     seed: int = 20261001
     pair_convention: str = 'paper_k_squared'
-    simulation: bool = False
 
     def __post_init__(self):
         # PSEUDOCODE: reject ambiguous types and incoherent window/threshold settings.
@@ -48,7 +47,7 @@ class StudyConfig:
                      'calibration_min_events', 'calibration_min_negative_days'):
             if type(getattr(self, name)) is not int or getattr(self, name) < 1:
                 raise ValueError(f'{name} must be a positive integer.')
-        if type(self.seed) is not int or type(self.max_missing_run) is not int or self.max_missing_run < 0:
+        if type(self.seed) is not int or self.seed < 0 or type(self.max_missing_run) is not int or self.max_missing_run < 0:
             raise ValueError('Invalid seed or missing-run length.')
         if self.reference_min_people < 9 or self.outcome_min_days > self.outcome_window or self.rolling_min_days > self.rolling_days:
             raise ValueError('Incoherent minimum sample count.')
@@ -69,7 +68,7 @@ class StudyConfig:
             raise ValueError('Lead time exceeds the horizon.')
         if not self.module_sizes or len(set(self.module_sizes)) != len(self.module_sizes) or any(type(k) is not int or k < 2 for k in self.module_sizes):
             raise ValueError('Invalid module sizes.')
-        if self.pair_convention not in ('unique_pairs', 'paper_k_squared') or type(self.simulation) is not bool:
+        if self.pair_convention not in ('unique_pairs', 'paper_k_squared'):
             raise ValueError('Invalid scoring convention or domain.')
         from .measures.panel import get_panel
         if not isinstance(self.study_id, str) or not self.study_id.strip() or max(self.module_sizes) >= len(get_panel(self.panel_id)):

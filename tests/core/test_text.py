@@ -25,10 +25,22 @@ def toy_corpus():
 
 
 class TextTests(unittest.TestCase):
+    def test_corpus_order_is_identical_on_every_worker(self):
+        first, receipt = prepare_corpus(toy_corpus())
+        second, reverse_receipt = prepare_corpus(reversed(toy_corpus()))
+        self.assertEqual(first, second)
+        self.assertEqual(receipt, reverse_receipt)
+
+    def test_corpus_requires_person_and_text_group_identity(self):
+        for key in ('participant_id', 'group_id', 'example_id'):
+            rows = toy_corpus(); rows[0][key] = True
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                prepare_corpus(rows)
+
     def test_constructed_evaluation_and_duplicate_text_rejected(self):
         rows = toy_corpus(); rows[-1]['origin'] = 'constructed'
         with self.assertRaises(ValueError):
-            prepare_corpus(rows, allow_constructed_training=True)
+            prepare_corpus(rows)
         rows = toy_corpus(); rows[-1]['text'] = rows[0]['text']
         with self.assertRaises(ValueError):
             prepare_corpus(rows)

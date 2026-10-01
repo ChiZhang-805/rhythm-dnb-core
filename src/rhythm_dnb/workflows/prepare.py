@@ -3,7 +3,7 @@
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 import numpy as np
-from ..contracts import DailyPanel, FeatureValue, Provenance
+from ..contracts import DailyPanel, FeatureValue
 from ..timebase import available_as_of, local_boundary, instant
 from ..provenance import build_lineage
 from ..io.validation import validate_observations
@@ -38,6 +38,10 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
         groups.setdefault(row.variable, []).append(row)
     values, parents, model_ids = {}, {}, {}
     sleeps = groups.get('sleep_episode', [])
+    # A completed interval may cross 04:00: its known overlap still belongs to the previous day.
+    duration_sources = [r for r in observations if r.participant_id == participant_id and r.timezone == zone
+                        and r.variable == 'sleep_episode' and instant(r.start) < cutoff and instant(r.end) > begin
+                        and instant(r.end) <= instant(issued_at) and instant(r.available_at) <= instant(issued_at)]
     main = groups.get('main_sleep_period', [])
     if len(main) > 1 or any(r.unit != 'interval' for r in main):
         raise ValueError('At most one explicitly identified main sleep period is allowed.')
@@ -47,15 +51,14 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
                        and r.variable == 'sleep_episode' and instant(main[0].start) <= instant(r.start)
                        and instant(r.end) <= instant(main[0].end) and available_as_of(r, cutoff, issued_at)]
         sleeps = list({r.observation_id: r for r in sleeps + within_main}.values())
-    if any(r.unit != 'state' or type(r.value) not in (int, float) or r.value != 1 for r in sleeps):
+    if any(r.unit != 'state' or type(r.value) not in (int, float) or r.value != 1 for r in sleeps + duration_sources):
         raise ValueError('Sleep episodes must be explicit asleep-state intervals.')
     sleep = daily_sleep([(r.start, r.end) for r in sleeps], zone,
                         main_period=(main[0].start, main[0].end) if main else None) if sleep_complete else {'sleep_midpoint_h': None, 'sleep_duration_h': None}
     # Completed main-period metadata must never add yesterday's sleep to today's duration.
-    duration_sources = [r for r in sleeps if instant(r.end) > begin]
-    if sleep_complete and sleeps:
-        sleep['sleep_duration_h'] = sum((instant(r.end) - max(begin, instant(r.start))).total_seconds()
-                                        for r in duration_sources) / 3600
+    if sleep_complete:
+        clipped = [(max(begin, instant(r.start)), min(cutoff, instant(r.end))) for r in duration_sources]
+        sleep['sleep_duration_h'] = daily_sleep(clipped, zone)['sleep_duration_h']
     values.update(sleep)
     for key in sleep:
         parents[key] = sleeps + main
@@ -108,12 +111,12 @@ def prepare_day(observations, participant_id, day, zone, issued_at, *, panel_id=
     features = []
     for name in get_panel(panel_id):
         sources = parents.get(name, []); value = values.get(name)
-        provenance = build_lineage([r.provenance for r in sources], 'prepare_day-v2:' + name)
+        provenance = build_lineage([r.provenance for r in sources], 'prepare_day:' + name)
         features.append(FeatureValue(name, value, UNITS[name],
             max((instant(r.available_at) for r in sources), default=instant(issued_at)), provenance,
             reason='missing_or_incomplete_source' if value is None else None,
             coverage=(float(wearing.sum() / 1440) if name.startswith('activity_') and value is not None else 1. if value is not None else 0.),
-            measured_until=max((instant(r.end) for r in sources), default=cutoff),
+            measured_until=min(cutoff, max((instant(r.end) for r in sources), default=cutoff)),
             model_id=model_ids.get(name)))
     return DailyPanel(participant_id, day, zone, tuple(features))
 

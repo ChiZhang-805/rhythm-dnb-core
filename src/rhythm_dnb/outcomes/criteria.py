@@ -1,4 +1,4 @@
-"""Independent SEA-v2 endpoint rules. DNB scores never enter these functions."""
+"""Independent sleep/eating/activity endpoint rules. DNB scores never enter these functions."""
 
 from datetime import timedelta
 import numpy as np
@@ -60,7 +60,7 @@ def fit_criteria(stable_people, cutoff, *, quantile=.95, minimum_people=60):
             weights.extend([1 / len(values)] * len(values))
         thresholds[domain] = {'absolute': weighted_quantile(levels, weights, quantile),
                               'increase': weighted_quantile(changes, weights, quantile)}
-    payload = {'version': 'SEA-v2', 'thresholds': thresholds, 'quantile': quantile,
+    payload = {'definition': 'sleep-eating-activity', 'thresholds': thresholds, 'quantile': quantile,
                'people': sorted(ids), 'cutoff': instant(cutoff).isoformat()}
     return {**payload, 'id': fingerprint(payload)}
 

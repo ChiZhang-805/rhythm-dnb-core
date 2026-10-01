@@ -1,6 +1,6 @@
 {
-  "study_id": "behavioral-rhythm-v2",
-  "panel_id": "joint12",
+  "study_id": "behavioral-rhythm",
+  "panel_id": "objective8",
   "baseline_days": 14,
   "outcome_window": 7,
   "outcome_min_days": 6,
@@ -30,6 +30,5 @@
   "calibration_min_negative_days": 30,
   "epsilon": 1e-08,
   "seed": 20261001,
-  "pair_convention": "paper_k_squared",
-  "simulation": false
+  "pair_convention": "paper_k_squared"
 }

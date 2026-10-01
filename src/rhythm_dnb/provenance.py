@@ -37,13 +37,11 @@ def file_hash(path) -> str:
     return digest.hexdigest()
 
 
-def eligible_measurement(provenance: Provenance, *, simulation: bool = False) -> bool:
-    # PSEUDOCODE: require traceable real lineage or explicitly selected simulation lineage.
-    if not provenance.source_id or not provenance.source_hash:
+def eligible_measurement(provenance: Provenance) -> bool:
+    # PSEUDOCODE: require independent observed or derived measurements with explicit source evidence.
+    if not all(isinstance(value, str) and value.strip() for value in (provenance.source_id, provenance.source_hash)):
         return False
-    if simulation:
-        return provenance.kind == 'synthetic'
-    return provenance.kind in ('observed', 'derived') and provenance.independent
+    return provenance.kind in ('observed', 'derived') and provenance.independent is True
 
 
 def build_lineage(parents, method: str) -> Provenance:

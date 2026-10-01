@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rhythm-dnb-core"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Auditable behavioral-rhythm DNB research and frozen inference"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,3 +25,5 @@ Issues = "https://github.com/ChiZhang-805/rhythm-dnb-core/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools_scm]

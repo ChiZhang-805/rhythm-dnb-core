@@ -5,15 +5,12 @@ Use the hospital/normalized adapter after supplying verified time and lineage.
 """
 """Import measured PMData person-days without assigning rhythm outcomes."""
 
-from concurrent.futures import ThreadPoolExecutor,as_completed
 from datetime import datetime,timedelta
 from hashlib import sha256
 from pathlib import Path
 import csv
 import json
 import math
-from urllib.request import urlopen
-from urllib.parse import quote
 
 from .legacy_schema import validate_record
 
@@ -26,7 +23,7 @@ P01_OFFICIAL_SLEEP_SCORE_SHA256='01fc09f685cc5844eea5b64cc47b4a5b486f41eeba3b96b
 
 
 def _digest(path):
-    # PSEUDOCODE: validate inputs -> digest -> return the fixed semantic contract.
+    # PSEUDOCODE: hash exact local source bytes for the import provenance receipt.
     return sha256(Path(path).read_bytes()).hexdigest()
 
 
@@ -35,20 +32,20 @@ def _digest(path):
 
 
 def _local_datetime(value):
-    # PSEUDOCODE: validate inputs -> local datetime -> return the fixed semantic contract.
+    # PSEUDOCODE: parse the source local date-time while preserving its supplied offset.
     if not isinstance(value,str):
         raise ValueError('Missing PMData local timestamp.')
     return datetime.fromisoformat(value.replace(' ','T'))
 
 
 def _clock(value):
-    # PSEUDOCODE: validate inputs -> clock -> return the fixed semantic contract.
+    # PSEUDOCODE: extract fractional local hour from the source timestamp.
     point=_local_datetime(value)
     return point.hour+point.minute/60+point.second/3600+point.microsecond/3600000000
 
 
 def _main_sleep_by_date(entries):
-    # PSEUDOCODE: validate inputs -> main sleep by date -> return the fixed semantic contract.
+    # PSEUDOCODE: select the longest designated main sleep per source date with a stable ID tie-break.
     selected={}
     for item in entries:
         if item.get('mainSleep') is not True or not item.get('dateOfSleep'):
@@ -62,7 +59,7 @@ def _main_sleep_by_date(entries):
 
 
 def _prior_day_exercise(entries):
-    # PSEUDOCODE: validate inputs -> prior day exercise -> return the fixed semantic contract.
+    # PSEUDOCODE: group valid exercises by source date -> sum duration and calculate weighted circular midpoint.
     totals={}
     for item in entries:
         try:
@@ -87,7 +84,7 @@ def _prior_day_exercise(entries):
 
 
 def _available_wellness(rows,anchor):
-    # PSEUDOCODE: validate inputs -> available wellness -> return the fixed semantic contract.
+    # PSEUDOCODE: retain reports from the preceding 24 hours -> select the most recent available report.
     eligible=[]
     for row in rows:
         try:
@@ -106,7 +103,7 @@ def build_records(root,participants=None):
     These are retrospective date-bucket research rows. PMData supplies no
     independent rhythm-disorder diagnosis or future-onset ground truth.
     """
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: verify local input presence -> join matched sleep scores -> retain prior exercise and source-backed wellness.
     root=Path(root)
     participants=tuple(participants or (f'p{i:02d}' for i in range(1,17)))
     records=[]

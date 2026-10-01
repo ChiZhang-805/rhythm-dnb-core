@@ -8,10 +8,8 @@ Use the hospital/normalized adapter after supplying verified time and lineage.
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from hashlib import sha256
-import json
 import math
 from pathlib import Path
-from urllib.request import urlopen
 
 from openpyxl import load_workbook
 
@@ -29,7 +27,7 @@ LABEL_SOURCE = 'DelSoM sleep physician ICSD-2 DSWPD diagnosis before baseline; r
 
 
 def _table(sheet):
-    # PSEUDOCODE: validate inputs -> table -> return the fixed semantic contract.
+    # PSEUDOCODE: pair worksheet headers with nonempty rows while retaining source line numbers.
     rows = sheet.values
     header = next(rows)
     for line, values in enumerate(rows, 2):
@@ -38,7 +36,7 @@ def _table(sheet):
 
 
 def _date(value):
-    # PSEUDOCODE: validate inputs -> date -> return the fixed semantic contract.
+    # PSEUDOCODE: read a supplied calendar date -> return missing for invalid date fields.
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -52,7 +50,7 @@ def _date(value):
 
 
 def _number(value, maximum):
-    # PSEUDOCODE: validate inputs -> number -> return the fixed semantic contract.
+    # PSEUDOCODE: reject boolean/nonfinite values -> retain numbers within the source field bounds.
     if isinstance(value, bool):
         return None
     try:
@@ -63,7 +61,7 @@ def _number(value, maximum):
 
 
 def _pick_value(row, primary, fallback, maximum):
-    # PSEUDOCODE: validate inputs -> pick value -> return the fixed semantic contract.
+    # PSEUDOCODE: prefer the valid objective measurement -> otherwise use the documented diary fallback.
     first = _number(row.get(primary), maximum)
     second = _number(row.get(fallback), maximum)
     return (first, primary) if first is not None else (second, fallback) if second is not None else (None, None)
@@ -71,7 +69,7 @@ def _pick_value(row, primary, fallback, maximum):
 
 def _build_period(root, verify, period):
     """Only baseline has an independently established current-state diagnosis."""
-    # PSEUDOCODE: validate inputs -> build period -> return the fixed semantic contract.
+    # PSEUDOCODE: verify source hashes -> join eligible nights -> separate baseline diagnosis from treatment observations.
     root = Path(root)
     for name, expected in FILES.items():
         path = root / name
@@ -165,11 +163,11 @@ def _build_period(root, verify, period):
 
 def build_records(root, verify=True):
     """Import diagnosis-confirmed baseline nights only."""
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: import baseline nights with independently established enrollment diagnoses.
     return _build_period(root, verify, 'Baseline')
 
 
 def build_treatment_records(root, verify=True):
     """Import treatment nights without carrying baseline diagnosis forward."""
-    # PSEUDOCODE: validate inputs -> build treatment records -> return the fixed semantic contract.
+    # PSEUDOCODE: import treatment nights while leaving current outcome status unknown.
     return _build_period(root, verify, 'Treatment')

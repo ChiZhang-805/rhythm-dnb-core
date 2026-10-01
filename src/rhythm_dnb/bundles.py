@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import numpy as np
 from .config import StudyConfig
+from .definitions import MEASUREMENT_ID
 from .provenance import fingerprint, canonical_json
 from .timebase import instant
 from .dnb.modules import candidate_modules
@@ -13,8 +14,8 @@ from .measures.scaling import transform, fit_scaler
 
 
 def make_bundle(config, reference, discovery, calibration=None, *, text_model_id=None):
-    # PSEUDOCODE: assemble versioned frozen artifacts, then run the same checks as loading.
-    payload = {'schema_version': 2, 'study': asdict(config), 'reference': reference,
+    # PSEUDOCODE: assemble content-identified frozen artifacts, then run the same checks as loading.
+    payload = {'measurement_id': MEASUREMENT_ID, 'study': asdict(config), 'reference': reference,
                'discovery': discovery, 'calibration': calibration, 'text_model_id': text_model_id}
     bundle = {**payload, 'id': fingerprint(payload)}
     check_compatibility(bundle)
@@ -23,10 +24,10 @@ def make_bundle(config, reference, discovery, calibration=None, *, text_model_id
 
 def check_compatibility(bundle):
     # PSEUDOCODE: verify hashes and semantics -> enforce disjoint roles and ordered fitting cutoffs.
-    if set(bundle) != {'schema_version', 'study', 'reference', 'discovery', 'calibration', 'text_model_id', 'id'}:
+    if set(bundle) != {'measurement_id', 'study', 'reference', 'discovery', 'calibration', 'text_model_id', 'id'}:
         raise ValueError('Unexpected bundle fields.')
-    if bundle['schema_version'] != 2 or fingerprint({k: v for k, v in bundle.items() if k != 'id'}) != bundle['id']:
-        raise ValueError('Bundle checksum/version mismatch.')
+    if bundle['measurement_id'] != MEASUREMENT_ID or fingerprint({k: v for k, v in bundle.items() if k != 'id'}) != bundle['id']:
+        raise ValueError('Bundle checksum/measurement definition mismatch.')
     study = dict(bundle['study']); study['module_sizes'] = tuple(study['module_sizes'])
     config = StudyConfig(**study)
     reference, discovery, calibration = (bundle[k] for k in ('reference', 'discovery', 'calibration'))
@@ -38,7 +39,7 @@ def check_compatibility(bundle):
         raise ValueError('The joint panel requires a pinned text model identity.')
     if reference.get('text_model_id') != bundle['text_model_id']:
         raise ValueError('Reference and bundle text models differ.')
-    if tuple(reference['features']) != features or reference['simulation'] != config.simulation:
+    if tuple(reference['features']) != features:
         raise ValueError('Reference panel/domain mismatch.')
     if tuple(reference['scaler']['features']) != features:
         raise ValueError('Scaler order mismatch.')
@@ -57,7 +58,7 @@ def check_compatibility(bundle):
         raise ValueError('Frozen circular centers differ from the declared reference.')
     if discovery['reference_id'] != reference['id'] or discovery['study_id'] != fingerprint(asdict(config)):
         raise ValueError('Discovery was fit for another reference/study.')
-    if not config.simulation and not discovery.get('outcome_protocol_id'):
+    if not discovery.get('outcome_protocol_id'):
         raise ValueError('Real discovery lacks a frozen endpoint protocol identity.')
     modules = discovery['modules']
     if modules:

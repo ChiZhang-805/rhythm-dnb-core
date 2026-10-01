@@ -15,7 +15,7 @@ class _DataError(ValueError):
 
 
 def _integer(value, name, minimum=1):
-    # PSEUDOCODE: validate fixed dimensions -> compute integer -> retain invalid-data reasons.
+    # PSEUDOCODE: reject boolean/noninteger settings and values below the required minimum.
     if (isinstance(value, (bool, np.bool_))
             or not isinstance(value, (int, np.integer)) or value < minimum):
         raise ValueError(f'{name} must be an integer >= {minimum}.')
@@ -23,7 +23,7 @@ def _integer(value, name, minimum=1):
 
 
 def _settings(min_samples, epsilon):
-    # PSEUDOCODE: validate fixed dimensions -> compute settings -> retain invalid-data reasons.
+    # PSEUDOCODE: validate sample count -> require a finite positive denominator tolerance.
     minimum = _integer(min_samples, 'min_samples', 2)
     if (isinstance(epsilon, (bool, np.bool_))
             or not isinstance(epsilon, (int, float, np.integer, np.floating))):
@@ -38,7 +38,7 @@ def _settings(min_samples, epsilon):
 
 
 def _sequence(value, name):
-    # PSEUDOCODE: validate fixed dimensions -> compute sequence -> retain invalid-data reasons.
+    # PSEUDOCODE: require an ordered sequence without accepting strings, mappings or sets.
     if isinstance(value, (str, bytes, Mapping, set, frozenset)):
         raise ValueError(f'{name} must be an ordered sequence.')
     try:
@@ -48,7 +48,7 @@ def _sequence(value, name):
 
 
 def _names(value, name):
-    # PSEUDOCODE: validate fixed dimensions -> compute names -> retain invalid-data reasons.
+    # PSEUDOCODE: require nonempty unique feature names while preserving input order.
     names = _sequence(value, name)
     if (not names or any(not isinstance(n, str) or not n.strip() for n in names)
             or len(set(names)) != len(names)):
@@ -57,7 +57,7 @@ def _names(value, name):
 
 
 def _numeric(value, ndim, name):
-    # PSEUDOCODE: validate fixed dimensions -> compute numeric -> retain invalid-data reasons.
+    # PSEUDOCODE: validate dimensions and real numeric types before float conversion can conceal invalid inputs.
     if np.ma.isMaskedArray(value):
         raise ValueError(f'{name} must use None or NaN for missing entries, not a mask.')
     try:
@@ -79,7 +79,7 @@ def _numeric(value, ndim, name):
 
 
 def _matrix(matrix, feature_names):
-    # PSEUDOCODE: validate fixed dimensions -> compute matrix -> retain invalid-data reasons.
+    # PSEUDOCODE: match names to matrix columns -> sort both into one canonical feature order.
     x = _numeric(matrix, 2, 'matrix')
     names = _names(feature_names, 'feature_names')
     if len(names) < 3 or len(names) != x.shape[1]:
@@ -89,7 +89,7 @@ def _matrix(matrix, feature_names):
 
 
 def _indices(module, names):
-    # PSEUDOCODE: validate fixed dimensions -> compute indices -> retain invalid-data reasons.
+    # PSEUDOCODE: resolve module members -> require at least two nodes and a nonempty external complement.
     selected = _names(module, 'module')
     if not set(selected) <= set(names):
         raise ValueError('module contains unknown features.')
@@ -99,7 +99,7 @@ def _indices(module, names):
 
 
 def _empty_result(matrix, names, indices, kind):
-    # PSEUDOCODE: validate fixed dimensions -> compute empty result -> retain invalid-data reasons.
+    # PSEUDOCODE: initialize an invalid result with actual row counts and explicit missing components.
     return {
         'valid': False, 'reason': None, 'score': None,
         **dict.fromkeys(_COMPONENTS[kind]),
@@ -110,7 +110,7 @@ def _empty_result(matrix, names, indices, kind):
 
 
 def _complete_rows(matrix, min_samples, reference=False):
-    # PSEUDOCODE: validate fixed dimensions -> compute complete rows -> retain invalid-data reasons.
+    # PSEUDOCODE: reject infinities -> retain jointly complete rows -> enforce the sample-count gate.
     if np.isinf(matrix).any():
         raise _DataError('infinite_reference' if reference else 'infinite_input')
     if not reference and np.isnan(matrix).all(axis=0).any():
@@ -123,7 +123,7 @@ def _complete_rows(matrix, min_samples, reference=False):
 
 
 def _statistics(rows, reference=False):
-    # PSEUDOCODE: validate fixed dimensions -> compute statistics -> retain invalid-data reasons.
+    # PSEUDOCODE: compute sample SD and Pearson correlations -> reject constant or nonfinite statistics.
     with np.errstate(over='ignore', invalid='ignore', divide='ignore', under='ignore'):
         sd = np.std(rows, axis=0, ddof=1)
         if np.any(sd == 0) or np.any(np.all(rows == rows[0], axis=0)):
@@ -138,7 +138,7 @@ def _statistics(rows, reference=False):
 
 
 def _score(result, amplitude, correlation, indices, kind, epsilon, pair_convention='unique_pairs'):
-    # PSEUDOCODE: validate fixed dimensions -> compute score -> retain invalid-data reasons.
+    # PSEUDOCODE: average internal amplitudes and absolute correlations -> apply pair convention -> reject unstable denominators.
     inside = np.asarray(indices, dtype=int)
     outside = [i for i in range(len(amplitude)) if i not in indices]
     internal = correlation[np.ix_(inside, inside)][np.triu_indices(len(inside), k=1)]

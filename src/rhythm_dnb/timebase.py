@@ -34,7 +34,7 @@ def forecast_bounds(issued_at: datetime, zone: str) -> tuple[date, datetime, dat
     # PSEUDOCODE: enforce noon schedule -> derive completed day and strict data cutoff.
     local = instant(issued_at).astimezone(ZoneInfo(zone))
     if local.time().replace(tzinfo=None) != time(12):
-        raise ValueError('Study v1 forecasts must be issued at local 12:00:00.')
+        raise ValueError('Study forecasts must be issued at local 12:00:00.')
     day = local.date() - timedelta(days=1)
     return day, instant(local_boundary(local.date(), zone)), instant(issued_at)
 

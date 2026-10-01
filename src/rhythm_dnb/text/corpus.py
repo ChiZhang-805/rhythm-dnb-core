@@ -6,15 +6,17 @@ from ..io.splits import validate_splits
 from .schema import CATEGORIES, validate_input
 
 
-def prepare_corpus(rows, *, allow_constructed_training=False, require_all_categories=True):
+def prepare_corpus(rows, *, require_all_categories=True):
     # PSEUDOCODE: validate semantic labels -> enforce human review and split groups -> fingerprint exact rows.
     rows = [dict(r) for r in rows]
     ids, identities = set(), {}
     for row in rows:
         category, text = validate_input(row['category'], row['text'])
         row.update(category=category, text=text)
-        if not row.get('example_id') or row['example_id'] in ids or not row.get('group_id'):
+        if any(not isinstance(row.get(key), str) or not row[key].strip() for key in ('example_id', 'group_id')) or row['example_id'] in ids:
             raise ValueError('Unique example IDs and leakage groups are required.')
+        if not isinstance(row.get('participant_id'), str) or not row['participant_id'].strip():
+            raise ValueError('Every corpus row needs a participant identity for independent evaluation.')
         ids.add(row['example_id'])
         if row.get('split') not in ('train', 'validation', 'test'):
             raise ValueError('Unknown corpus split.')
@@ -23,19 +25,19 @@ def prepare_corpus(rows, *, allow_constructed_training=False, require_all_catego
         if row.get('review_status') != 'accepted' or not row.get('annotation_evidence_id'):
             raise ValueError('Unreviewed semantic reference labels.')
         real = row.get('origin') in ('observed', 'translated_observed')
-        if not real and (row['split'] != 'train' or not allow_constructed_training):
+        if not real:
             raise ValueError('Constructed text is excluded from primary training/evaluation.')
         identity = fingerprint(''.join(text.split()))
         if identity in identities and identities[identity] != row['split']:
             raise ValueError('Duplicate text crosses corpus splits.')
         identities[identity] = row['split']
     validate_splits(rows)
+    rows.sort(key=lambda row: row['example_id'])
     partitions = {split: [r for r in rows if r['split'] == split] for split in ('train', 'validation', 'test')}
     for split, items in partitions.items():
         if not items or require_all_categories and {r['category'] for r in items} != set(CATEGORIES):
             raise ValueError('Empty or category-incomplete partition: ' + split)
     manifest = {'id': fingerprint(sorted(rows, key=lambda r: r['example_id'])),
                 'counts': {k: len(v) for k, v in partitions.items()},
-                'allow_constructed_training': allow_constructed_training,
                 'partitions': {k: [r['example_id'] for r in v] for k, v in partitions.items()}}
     return partitions, manifest

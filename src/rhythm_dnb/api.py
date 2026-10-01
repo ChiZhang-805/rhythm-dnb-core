@@ -54,15 +54,14 @@ class RhythmPredictor:
             if target is None:
                 reasons = ('missing_target_day',)
             else:
-                values, reasons = panel_vector(target, reference['features'], as_of, simulation=config.simulation)
+                values, reasons = panel_vector(target, reference['features'], as_of)
                 if not reasons:
                     results = score_modules(values, reference, modules, epsilon=config.epsilon,
                                             pair_convention=config.pair_convention)
         elif method == 'rolling':
             values, reason = select_window(request.history, request.participant_id, request.timezone, day,
                                            reference['features'], as_of, days=config.rolling_days,
-                                           minimum=config.rolling_min_days, max_missing_run=config.max_missing_run,
-                                           simulation=config.simulation)
+                                           minimum=config.rolling_min_days, max_missing_run=config.max_missing_run)
             if reason:
                 reasons = (reason,)
             else:

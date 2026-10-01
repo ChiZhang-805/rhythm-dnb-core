@@ -1,45 +1,18 @@
-"""Mechanism tests and fully labeled synthetic integration cohorts, never real validation."""
+"""Artificial integration fixtures. Observed tags exercise validation contracts, not genuine data.
+
+These builders are test-only, are never packaged, and provide no research evidence.
+"""
 
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 import numpy as np
-from ..contracts import DailyPanel, FeatureValue, Provenance, PredictionRequest, OutcomeLabel
-from ..config import StudyConfig
-from ..dnb.classic import dnb_components
-from ..dnb.reference import ReferenceCandidate
-from ..measures.panel import get_panel, UNITS, CLOCKS
-from ..provenance import fingerprint
-from .discover import DiscoveryPair
-
-
-def simulate_mechanism(*, seeds=range(30), samples=200):
-    # PSEUDOCODE: contrast coordinated critical-like fluctuations with mean/noise/phase confounds across seeds.
-    names = tuple('abcdef'); module = ('a', 'b', 'c'); results = {}
-    for seed in seeds:
-        rng = np.random.default_rng(seed)
-        common = rng.normal(size=(samples, 1))
-        stable = .5 * common + rng.normal(size=(samples, 6))
-        critical = rng.normal(size=(samples, 6))
-        latent = rng.normal(size=samples) * 3
-        critical[:, :3] = latent[:, None] * [1, -1, 1] + rng.normal(scale=.15, size=(samples, 3))
-        time = np.arange(samples)
-        periodic = np.column_stack([np.sin(2 * np.pi * time / 24 + j) for j in range(6)]) + rng.normal(scale=.2, size=(samples, 6))
-        scenarios = {'stable': stable, 'coordinated_critical': critical,
-                     'mean_shift_only': stable + np.array([4, 4, 4, 0, 0, 0]),
-                     'independent_noise': stable + rng.normal(scale=3, size=stable.shape),
-                     'stable_periodic': periodic, 'stable_late_phase': np.roll(periodic, 4, axis=0),
-                     'shared_model_error': stable + np.column_stack([latent, latent, latent, np.zeros((samples, 3))]),
-                     'abrupt_shock_no_precursor': np.vstack((stable[:-1], stable[-1] + 10))}
-        missing = stable.copy(); missing[::3, :3] = np.nan; scenarios['missingness'] = missing
-        for name, matrix in scenarios.items():
-            result = dnb_components(matrix, names, module)
-            results.setdefault(name, []).append(result)
-    return {'domain': 'synthetic_mechanism_only', 'module': module, 'seeds': list(seeds),
-            'scenarios': {name: {'valid': sum(r['valid'] for r in rows),
-                'median_score': float(np.median([r['score'] for r in rows if r['valid']])),
-                'score_range': np.quantile([r['score'] for r in rows if r['valid']], [.1, .9]).tolist()}
-                for name, rows in results.items()},
-            'interpretation': 'Shared text-model error can mimic coordination; DNB alone does not establish causality.'}
+from rhythm_dnb.contracts import DailyPanel, FeatureValue, Provenance, PredictionRequest, OutcomeLabel, OutcomeEvent, MonitoringPeriod
+from rhythm_dnb.config import StudyConfig
+from rhythm_dnb.dnb.classic import dnb_components
+from rhythm_dnb.dnb.reference import ReferenceCandidate
+from rhythm_dnb.measures.panel import get_panel, UNITS, CLOCKS
+from rhythm_dnb.provenance import fingerprint
+from rhythm_dnb.research.discover import DiscoveryPair
 
 
 def _physical(values, features):
@@ -64,21 +37,21 @@ def _physical(values, features):
 
 
 def _panel(person, day, values, features, model_id=None):
-    # PSEUDOCODE: mark every simulated cell and its true availability explicitly.
+    # PSEUDOCODE: construct test-only observed-format values with clearly artificial source receipts.
     measured = datetime.combine(day + timedelta(days=1), datetime.min.time(), timezone.utc).replace(hour=4)
-    provenance = Provenance('synthetic', person + ':' + str(day), fingerprint([person, str(day), list(values)]), method='simulation-v1')
+    provenance = Provenance('observed', 'unit-test-only:' + person + ':' + str(day), fingerprint([person, str(day), list(values)]), method='artificial_software_test_fixture')
     return DailyPanel(person, day, 'UTC', tuple(FeatureValue(name, float(value), UNITS[name], measured,
         provenance, measured_until=measured, model_id=model_id if name.startswith('text_') else None)
         for name, value in zip(features, values)))
 
 
-def simulate_cohort(*, seed=20261001, panel_id='objective8', people_per_role=20, development_people=40):
-    """Generate four disjoint roles on ordered calendars for an executable research example."""
-    # PSEUDOCODE: generate independent references -> paired group transition -> daily calibration/test cases.
-    from ..workflows.develop import LabeledCase
+def make_cohort(*, seed=20261001, panel_id='objective8', people_per_role=20, development_people=40):
+    """Construct artificial software fixtures; the records must never enter a real study."""
+    # PSEUDOCODE: build artificial contract fixtures with disjoint people, complete registries and explicit calendars.
+    from rhythm_dnb.workflows.develop import LabeledCase
     rng = np.random.default_rng(seed); features = get_panel(panel_id); p = len(features)
-    config = StudyConfig(panel_id=panel_id, simulation=True, seed=seed, bootstrap_repetitions=40)
-    model_id = 'synthetic-semantic-v1' if panel_id == 'joint12' else None
+    config = StudyConfig(panel_id=panel_id, seed=seed, bootstrap_repetitions=40)
+    model_id = 'unit-test-semantic-model' if panel_id == 'joint12' else None
     reference = []
     for i in range(config.reference_min_people):
         panel = _panel(f'ref-{i}', date(2025, 1, 5), _physical(rng.normal(size=p), features), features, model_id)
@@ -88,17 +61,23 @@ def simulate_cohort(*, seed=20261001, panel_id='objective8', people_per_role=20,
         common = rng.normal(); stable = .8 * common + rng.normal(scale=.6, size=p)
         pre = rng.normal(size=p); latent = rng.normal() * 3
         pre[:3] = [latent, -latent, latent] + rng.normal(scale=.08, size=3)
+        first = _panel(f'dev-{i}', date(2025, 2, 1), _physical(stable, features), features, model_id)
+        second = _panel(f'dev-{i}', date(2025, 3, 10), _physical(pre, features), features, model_id)
         pairs.append(DiscoveryPair(f'dev-{i}', tuple(_physical(stable, features)), tuple(_physical(pre, features)),
-                                    datetime(2025, 3, 20, tzinfo=timezone.utc), f'synthetic-event-{i}'))
+            datetime(2025, 3, 20, tzinfo=timezone.utc), f'unit-test-event-{i}', first, second,
+            datetime(2025, 3, 15, 12, tzinfo=timezone.utc), 'unit-test-endpoint-protocol'))
     result = {'config': config, 'reference': reference, 'pairs': pairs, 'text_model_id': model_id,
               'reference_cutoff': datetime(2025, 1, 20, tzinfo=timezone.utc),
               'discovery_cutoff': datetime(2025, 3, 30, tzinfo=timezone.utc),
               'calibration_cutoff': datetime(2025, 6, 30, tzinfo=timezone.utc)}
     for role, start in [('calibration', date(2025, 5, 1)), ('test', date(2025, 8, 1))]:
-        cases = []
+        cases, events, monitoring = [], [], []
         for i in range(people_per_role):
             person = f'{role}-{i}'; positive = i % 2 == 0
             onset = datetime.combine(start + timedelta(days=24), datetime.min.time(), timezone.utc).replace(hour=12)
+            if positive:
+                events.append(OutcomeEvent(person, onset, onset + timedelta(days=2)))
+            monitoring.append(MonitoringPeriod(person, start, start + timedelta(days=23), 'UTC'))
             for offset in range(24):
                 issued = datetime.combine(start + timedelta(days=offset), datetime.min.time(), timezone.utc).replace(hour=12)
                 x = rng.normal(scale=.6, size=p)
@@ -108,6 +87,8 @@ def simulate_cohort(*, seed=20261001, panel_id='objective8', people_per_role=20,
                 panel = _panel(person, issued.date() - timedelta(days=1), _physical(x, features), features, model_id)
                 request = PredictionRequest(person, issued, 'UTC', (panel,))
                 outcome = OutcomeLabel(label, 'synthetic_scenario', onset if label else None)
-                cases.append(LabeledCase(request, outcome, issued + timedelta(days=9)))
+                cases.append(LabeledCase(request, outcome, issued + timedelta(days=9), 'unit-test-endpoint-protocol'))
         result[role] = cases
+        result[role + '_events'] = events
+        result[role + '_monitoring'] = monitoring
     return result

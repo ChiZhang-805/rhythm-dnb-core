@@ -8,7 +8,7 @@ from .schema import CATEGORIES,METRICS,FORMAL_CATEGORIES
 
 
 def average_ranks(values):
-    # PSEUDOCODE: validate inputs -> average ranks -> return the fixed semantic contract.
+    # PSEUDOCODE: stable-sort values -> give tied observations their average rank.
     order=np.argsort(values,kind='stable')
     ranks=np.empty(len(order),dtype=float)
     start=0
@@ -22,7 +22,7 @@ def average_ranks(values):
 
 
 def errors(truth,predicted):
-    # PSEUDOCODE: validate inputs -> errors -> return the fixed semantic contract.
+    # PSEUDOCODE: validate paired scores -> calculate absolute/squared errors and tied-rank correlation.
     truth=np.asarray(truth,dtype=float)
     predicted=np.asarray(predicted,dtype=float)
     if not len(truth) or truth.shape!=predicted.shape or not np.isfinite(truth).all() or not np.isfinite(predicted).all():
@@ -36,7 +36,7 @@ def errors(truth,predicted):
 
 
 def mean_baseline(train_rows):
-    # PSEUDOCODE: validate inputs -> mean baseline -> return the fixed semantic contract.
+    # PSEUDOCODE: fit one constant mean per score using training labels only.
     values=defaultdict(list)
     for row in train_rows:
         for key,value in row['scores'].items():
@@ -54,7 +54,7 @@ def median_baseline(train_rows):
 
 
 def report(rows,predictions,baseline,median_reference=None):
-    # PSEUDOCODE: validate inputs -> report -> return the fixed semantic contract.
+    # PSEUDOCODE: check every prediction -> aggregate per-score/category errors -> compare training-only constants.
     if len(rows)!=len(predictions) or not rows:
         raise ValueError('Every evaluation row must have one prediction.')
     truth,pred=defaultdict(list),defaultdict(list)

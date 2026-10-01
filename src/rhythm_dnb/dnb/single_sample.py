@@ -19,7 +19,7 @@ def sdnb_components(sample, reference, feature_names, module, min_samples=9, eps
     The low-level default retains legacy unique pairs for numerical compatibility;
     the project pipeline explicitly selects paper_k_squared for Eq. (6).
     """
-    # PSEUDOCODE: validate fixed dimensions -> compute sdnb components -> retain invalid-data reasons.
+    # PSEUDOCODE: compare unchanged reference correlations with reference-plus-target -> score target deviation and network perturbation.
     min_samples, epsilon = _settings(min_samples, epsilon)
     if pair_convention not in ('unique_pairs','paper_k_squared'):
         raise ValueError('Unknown sDNB pair convention.')

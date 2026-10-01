@@ -18,7 +18,7 @@ class ReferenceCandidate:
     baseline: bool = True
 
 
-def fit_reference(candidates, features, cutoff, *, minimum=60, seed=20261001, simulation=False):
+def fit_reference(candidates, features, cutoff, *, minimum=60, seed=20261001):
     # PSEUDOCODE: validate stable evidence/as-of data -> group eligible days -> draw one per person.
     from ..warning.windows import panel_vector
     cutoff = instant(cutoff)
@@ -33,7 +33,7 @@ def fit_reference(candidates, features, cutoff, *, minimum=60, seed=20261001, si
         if (candidate.stable is not True or candidate.baseline is not True or
                 not candidate.stability_evidence_id or instant(candidate.stability_available_at) > cutoff):
             continue
-        vector, reasons = panel_vector(p, features, cutoff, simulation=simulation)
+        vector, reasons = panel_vector(p, features, cutoff)
         if not reasons:
             grouped.setdefault(p.participant_id, []).append((p, vector, candidate.stability_evidence_id))
     if len(grouped) < minimum or minimum < 9:
@@ -49,7 +49,7 @@ def fit_reference(candidates, features, cutoff, *, minimum=60, seed=20261001, si
         raise ValueError('Reference text features require one pinned model identity.')
     scaler = fit_scaler(raw, features)
     reference = {'features': list(features), 'cutoff': cutoff.isoformat(), 'seed': seed,
-                 'simulation': simulation, 'text_model_id': next(iter(model_ids), None),
+                 'text_model_id': next(iter(model_ids), None),
                  'people': [item[0].participant_id for item in chosen],
                  'selected_days': [item[0].day.isoformat() for item in chosen],
                  'evidence_ids': [item[2] for item in chosen], 'scaler': scaler,

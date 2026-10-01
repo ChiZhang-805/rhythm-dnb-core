@@ -10,9 +10,9 @@ def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None
     # PSEUDOCODE: verify frozen policy/available labels -> infer unseen people -> report event metrics and intervals.
     config = check_compatibility(bundle)
     calibration = bundle['calibration']
-    if not config.simulation and events is None:
+    if events is None:
         raise ValueError('Primary real-data evaluation requires a separately locked confirmed-event registry.')
-    if not config.simulation and monitoring is None:
+    if monitoring is None:
         raise ValueError('Primary real-data evaluation requires an independently registered monitoring calendar.')
     if calibration is None or calibration['threshold'] is None:
         raise ValueError('No useful calibrated policy is available for locked validation.')
@@ -45,6 +45,6 @@ def validate(bundle, cases, *, bootstrap_repetitions=1000, evaluation_as_of=None
     metrics = event_metrics(rows, calibration['threshold'], events=events, monitoring=monitoring, **policy)
     intervals = cluster_intervals(rows, calibration['threshold'], repetitions=bootstrap_repetitions,
                                   seed=config.seed, events=events, monitoring=monitoring, **policy) if bootstrap_repetitions else None
-    return {'bundle_id': bundle['id'], 'domain': 'synthetic' if config.simulation else 'observed',
+    return {'bundle_id': bundle['id'], 'domain': 'source_backed',
             'metrics': metrics, 'cluster_intervals': intervals, 'predictions': responses,
             'fitting_on_test': False, 'clinical_validation': False}

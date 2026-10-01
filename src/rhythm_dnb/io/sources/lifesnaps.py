@@ -9,7 +9,6 @@ import csv
 from collections import defaultdict
 from datetime import date
 from hashlib import sha256
-import json
 import math
 from pathlib import Path
 from statistics import mean, stdev
@@ -29,7 +28,7 @@ FILES = {
 
 
 def _number(value, minimum=0, maximum=None):
-    # PSEUDOCODE: validate inputs -> number -> return the fixed semantic contract.
+    # PSEUDOCODE: parse a finite source number -> retain only values within documented input bounds.
     try:
         result = float(value)
     except (TypeError, ValueError):
@@ -40,7 +39,7 @@ def _number(value, minimum=0, maximum=None):
 
 
 def _hourly_sd(path):
-    # PSEUDOCODE: validate inputs -> hourly sd -> return the fixed semantic contract.
+    # PSEUDOCODE: group valid hourly heart rates by person/date -> require eight hours before sample SD.
     by_hour = defaultdict(list)
     with path.open(encoding='utf-8-sig', newline='') as source:
         for row in csv.DictReader(source):
@@ -57,7 +56,7 @@ def _hourly_sd(path):
 
 def build_records(root, verify=True):
     """Keep only source-compatible fields; date-only rows use a nominal anchor."""
-    # PSEUDOCODE: validate inputs -> build records -> return the fixed semantic contract.
+    # PSEUDOCODE: verify selected source files -> extract comparable daily measures -> retain missing outcomes.
     root = Path(root)
     paths = {name: root / name for name in FILES}
     for name, path in paths.items():

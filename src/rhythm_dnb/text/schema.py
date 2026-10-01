@@ -31,7 +31,7 @@ FORMAL_CATEGORIES=('emotion','social','diet','sleep')
 
 
 def normalize_category(value):
-    # PSEUDOCODE: validate inputs -> normalize category -> return the fixed semantic contract.
+    # PSEUDOCODE: map Chinese or canonical category names -> reject unsupported categories.
     if not isinstance(value,str):
         raise ValueError('请选择一个文本类别。')
     aliases={name:key for key,(name,_) in CATEGORIES.items()}
@@ -42,7 +42,7 @@ def normalize_category(value):
 
 
 def validate_input(category,text):
-    # PSEUDOCODE: validate inputs -> validate input -> return the fixed semantic contract.
+    # PSEUDOCODE: normalize category -> require nonempty Chinese text within the input limit.
     category=normalize_category(category)
     if not isinstance(text,str) or not text.strip():
         raise ValueError('请输入非空文本。')
@@ -55,7 +55,7 @@ def validate_input(category,text):
 
 
 def schema():
-    # PSEUDOCODE: validate inputs -> schema -> return the fixed semantic contract.
+    # PSEUDOCODE: export each category with its score names, directions and numeric bounds.
     return {'contract_id':CONTRACT_ID,'categories':[
         {'id':key,'label':name,'auxiliary':key not in FORMAL_CATEGORIES,
          'outputs':[{'key':metric,'label':next(m[2] for m in METRICS if m[0]==metric),

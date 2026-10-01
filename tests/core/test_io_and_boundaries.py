@@ -15,7 +15,7 @@ from rhythm_dnb.io.splits import make_splits, validate_splits
 from rhythm_dnb.io.sources.hospital import read_observations
 from rhythm_dnb.provenance import canonical_json, build_lineage, eligible_measurement
 from rhythm_dnb.contracts import Observation, Provenance
-from rhythm_dnb.research.simulate import _panel
+from support.cohort import _panel
 from rhythm_dnb.measures.panel import OBJECTIVE8
 from rhythm_dnb.workflows.prepare import prepare_day
 

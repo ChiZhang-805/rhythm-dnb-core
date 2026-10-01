@@ -14,7 +14,7 @@ from rhythm_dnb.workflows.prepare import prepare_day
 from rhythm_dnb.warning.policy import advance
 from rhythm_dnb.warning.windows import select_window
 from rhythm_dnb.research.evaluate import replay, event_metrics
-from rhythm_dnb.research.simulate import _panel
+from support.cohort import _panel
 from rhythm_dnb.measures.panel import OBJECTIVE8
 from rhythm_dnb.outcomes.events import detect_events
 from rhythm_dnb.outcomes.labels import future_label
@@ -27,6 +27,23 @@ UTC = timezone.utc
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_measurement_identity_ignores_prose_but_preserves_calculations(self):
+        from rhythm_dnb.definitions import normalized_syntax
+        first = 'def calculate(x):\n    return x + 1\n'
+        commented = 'def calculate(x):\n  """A clearer explanation."""\n  # Same operation\n  return x + 1\n'
+        self.assertEqual(normalized_syntax(first), normalized_syntax(commented))
+        self.assertNotEqual(normalized_syntax(first), normalized_syntax(first.replace('+ 1', '+ 2')))
+
+    def test_serialized_panel_cannot_guess_measurement_identity(self):
+        from rhythm_dnb.contracts import parse_panel
+        from rhythm_dnb.provenance import canonical_json
+        import json
+        panel = _panel('p', date(2025, 1, 1), np.arange(8, dtype=float), OBJECTIVE8)
+        payload = json.loads(canonical_json(panel))
+        payload['features'][0].pop('measurement_id')
+        with self.assertRaisesRegex(ValueError, 'measurement identity'):
+            parse_panel(payload)
+
     def observation(self, identity, start, end, variable='sleep_episode', value=1., unit='state'):
         # PSEUDOCODE: construct a traceable completed measurement for boundary tests.
         return Observation(identity, 'p', variable, value, unit, start, end, end, 'UTC', Provenance('observed', identity, 'abc'))
@@ -49,15 +66,25 @@ class ReviewRegressions(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare_day([row], 'p', start.date(), 'UTC', start + timedelta(hours=14), panel_id='objective8', sleep_complete=True)
 
+    def test_main_period_does_not_reintroduce_sleep_outside_the_day(self):
+        start = datetime(2025, 1, 1, 22, tzinfo=UTC)
+        rows = [self.observation('sleep', start, start + timedelta(hours=5)),
+                self.observation('main', start, start + timedelta(hours=9), 'main_sleep_period', None, 'interval')]
+        panel = prepare_day(rows, 'p', date(2025, 1, 2), 'UTC', datetime(2025, 1, 3, 12, tzinfo=UTC),
+                            panel_id='objective8', sleep_complete=True)
+        duration = next(f for f in panel.features if f.name == 'sleep_duration_h')
+        self.assertIsNone(duration.value)
+        self.assertIsNotNone(duration.reason)
+
     def test_mixed_simulation_and_real_lineage_is_ineligible(self):
         p = build_lineage([Provenance('observed', 'real', 'a'), Provenance('synthetic', 'sim', 'b')], 'combined')
         self.assertFalse(eligible_measurement(p))
-        self.assertFalse(eligible_measurement(p, simulation=True))
+        self.assertFalse(eligible_measurement(Provenance('observed', 'real', 'a', independent='yes')))
 
     def test_missing_target_cannot_reuse_old_rolling_score(self):
         last = date(2025, 1, 31)
         panels = [_panel('p', last - timedelta(days=i), [4, 7, 8, 20, 10, .5, 100, 60], OBJECTIVE8) for i in range(1, 28)]
-        _, reason = select_window(panels, 'p', 'UTC', last, OBJECTIVE8, datetime(2025, 2, 1, 12, tzinfo=UTC), simulation=True)
+        _, reason = select_window(panels, 'p', 'UTC', last, OBJECTIVE8, datetime(2025, 2, 1, 12, tzinfo=UTC))
         self.assertEqual(reason, 'missing_target_day')
 
     def test_state_rejects_method_and_timezone_switch(self):
@@ -205,11 +232,36 @@ class ReviewRegressions(unittest.TestCase):
 
     def test_real_discovery_rejects_untraceable_flat_vectors(self):
         # PSEUDOCODE: fail closed before accepting constructed vectors into a real development cohort.
-        from rhythm_dnb.research.simulate import simulate_cohort
+        from support.cohort import make_cohort
         from rhythm_dnb.research.discover import discover
-        c = simulate_cohort()
+        c = make_cohort()
+        c['pairs'] = [replace(p, stable_panel=None, pre_event_panel=None) for p in c['pairs']]
         with self.assertRaisesRegex(ValueError, 'source-backed'):
-            discover(c['pairs'], replace(c['config'], simulation=False), {'people': [], 'features': list(OBJECTIVE8)}, c['discovery_cutoff'])
+            discover(c['pairs'], c['config'], {'people': [], 'features': list(OBJECTIVE8)}, c['discovery_cutoff'])
+
+    def test_sleep_crossing_boundary_is_counted_once_across_two_days(self):
+        start = datetime(2025, 1, 1, 22, tzinfo=UTC)
+        row = self.observation('overnight', start, start + timedelta(hours=9))
+        panels = [prepare_day([row], 'p', date(2025, 1, day), 'UTC',
+                              datetime(2025, 1, day + 1, 12, tzinfo=UTC),
+                              panel_id='objective8', sleep_complete=True) for day in (1, 2)]
+        durations = [next(f.value for f in p.features if f.name == 'sleep_duration_h') for p in panels]
+        self.assertEqual(durations, [6., 3.])
+        self.assertEqual(sum(durations), 9.)
+        first = next(f for f in panels[0].features if f.name == 'sleep_duration_h')
+        self.assertEqual(first.measured_until, datetime(2025, 1, 2, 4, tzinfo=UTC))
+        self.assertEqual(first.available_at, row.end)
+
+    def test_discovery_rejects_measurement_arriving_after_forecast(self):
+        from support.cohort import make_cohort
+        from rhythm_dnb.dnb.reference import fit_reference
+        from rhythm_dnb.research.discover import discover
+        c = make_cohort()
+        reference = fit_reference(c['reference'], OBJECTIVE8, c['reference_cutoff'])
+        p = c['pairs'][0]
+        late = replace(p.pre_event_panel, features=tuple(replace(f, available_at=p.evidence_available_at) for f in p.pre_event_panel.features))
+        with self.assertRaisesRegex(ValueError, 'source-backed'):
+            discover([replace(p, pre_event_panel=late)] + c['pairs'][1:], c['config'], reference, c['discovery_cutoff'])
 
     def test_missing_scheduled_forecasts_reduce_coverage_without_becoming_zero(self):
         # PSEUDOCODE: register three monitoring days but supply one forecast; retain both missing days.

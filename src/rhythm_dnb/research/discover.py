@@ -71,25 +71,25 @@ def discover(pairs, config, reference, cutoff, *, minimum_people=9):
         raise ValueError('Insufficient independent development pairs.')
     if any(not p.evidence_id or instant(p.evidence_available_at) > instant(cutoff) for p in pairs):
         raise ValueError('Development outcome evidence is unavailable at cutoff.')
-    if not config.simulation:
-        for pair in pairs:
-            if pair.stable_panel is None or pair.pre_event_panel is None or pair.event_onset is None or not pair.outcome_protocol_id:
-                raise ValueError('Real discovery requires source-backed panels, onset and a frozen endpoint protocol.')
-            a, b = pair.stable_panel, pair.pre_event_panel
-            if a.participant_id != pair.participant_id or b.participant_id != pair.participant_id or a.timezone != b.timezone or a.day >= b.day:
-                raise ValueError('Discovery pair identity or chronological order differs.')
-            for panel, vector in ((a, pair.stable), (b, pair.pre_event)):
-                checked, reasons = panel_vector(panel, reference['features'], cutoff)
-                if reasons or not np.array_equal(checked, np.asarray(vector)):
-                    raise ValueError('Discovery vector does not match eligible source-backed panel.')
-                if any(f.name.startswith('text_') and f.name in reference['features'] and f.model_id != reference['text_model_id'] for f in panel.features):
-                    raise ValueError('Discovery text model differs from the frozen reference.')
-            issued = instant(local_boundary(b.day + timedelta(days=1), b.timezone, hour=12))
-            lead = instant(pair.event_onset) - issued
-            if not timedelta(hours=config.min_lead_hours) <= lead <= timedelta(days=config.horizon_days) or instant(pair.event_onset) > instant(pair.evidence_available_at):
-                raise ValueError('Pre-event pair or confirmation lies outside the locked prediction protocol.')
-        if len({p.outcome_protocol_id for p in pairs}) != 1:
-            raise ValueError('Mixed endpoint definitions in development.')
+    for pair in pairs:
+        if pair.stable_panel is None or pair.pre_event_panel is None or pair.event_onset is None or not pair.outcome_protocol_id:
+            raise ValueError('Real discovery requires source-backed panels, onset and a frozen endpoint protocol.')
+        a, b = pair.stable_panel, pair.pre_event_panel
+        if a.participant_id != pair.participant_id or b.participant_id != pair.participant_id or a.timezone != b.timezone or a.day >= b.day:
+            raise ValueError('Discovery pair identity or chronological order differs.')
+        for panel, vector in ((a, pair.stable), (b, pair.pre_event)):
+            panel_issue = instant(local_boundary(panel.day + timedelta(days=1), panel.timezone, hour=12))
+            checked, reasons = panel_vector(panel, reference['features'], min(instant(cutoff), panel_issue))
+            if reasons or not np.array_equal(checked, np.asarray(vector)):
+                raise ValueError('Discovery vector does not match eligible source-backed panel.')
+            if any(f.name.startswith('text_') and f.name in reference['features'] and f.model_id != reference['text_model_id'] for f in panel.features):
+                raise ValueError('Discovery text model differs from the frozen reference.')
+        issued = instant(local_boundary(b.day + timedelta(days=1), b.timezone, hour=12))
+        lead = instant(pair.event_onset) - issued
+        if not timedelta(hours=config.min_lead_hours) <= lead <= timedelta(days=config.horizon_days) or instant(pair.event_onset) > instant(pair.evidence_available_at):
+            raise ValueError('Pre-event pair or confirmation lies outside the locked prediction protocol.')
+    if len({p.outcome_protocol_id for p in pairs}) != 1:
+        raise ValueError('Mixed endpoint definitions in development.')
     stable = transform([p.stable for p in pairs], reference['scaler'])
     transition = transform([p.pre_event for p in pairs], reference['scaler'])
     if stable.shape != transition.shape or not np.isfinite(stable).all() or not np.isfinite(transition).all():

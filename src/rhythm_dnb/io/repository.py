@@ -1,7 +1,6 @@
 """Explicit SQLite stores. Storage never predicts, trains, imputes, or rewrites text."""
 
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import date, datetime
 import json
 from pathlib import Path
@@ -9,6 +8,22 @@ import sqlite3
 from ..contracts import DailyPanel, FeatureValue, Provenance
 from ..provenance import canonical_json, fingerprint
 from ..timebase import instant
+from ..definitions import MEASUREMENT_ID
+
+
+STORE_SQL = '''
+CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE observations(id TEXT PRIMARY KEY, participant TEXT NOT NULL,
+    end_at TEXT NOT NULL, available_at TEXT NOT NULL, payload TEXT NOT NULL, hash TEXT NOT NULL);
+CREATE TABLE panels(participant TEXT NOT NULL, day TEXT NOT NULL, measurement_id TEXT NOT NULL,
+    payload TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(participant,day,measurement_id));
+CREATE TABLE outcomes(id TEXT PRIMARY KEY, participant TEXT NOT NULL, payload TEXT NOT NULL);
+CREATE TABLE predictions(id TEXT PRIMARY KEY, participant TEXT NOT NULL,
+    issued_at TEXT NOT NULL, bundle_id TEXT NOT NULL, payload TEXT NOT NULL,
+    UNIQUE(participant,issued_at,bundle_id));
+CREATE TABLE audit(id INTEGER PRIMARY KEY, operation TEXT NOT NULL, content_hash TEXT NOT NULL);
+CREATE INDEX observations_asof ON observations(participant,available_at,end_at);
+'''
 
 
 class RhythmRepository:
@@ -29,8 +44,8 @@ class RhythmRepository:
             if _initialize:
                 if tables:
                     raise ValueError('Initialization requires an empty store.')
-            elif 'metadata' not in tables or db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone() is None or db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()[0] != 'rhythm-dnb-core-2':
-                raise ValueError('This is not a v2 core store; legacy stores remain read-only audit inputs.')
+            elif 'metadata' not in tables or db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone() is None or db.execute("SELECT value FROM metadata WHERE key='schema'").fetchone()[0] != fingerprint(STORE_SQL):
+                raise ValueError('Store structure differs from the active data contract; rebuild from source evidence into a separate store.')
             with db:
                 yield db
         finally:
@@ -44,20 +59,8 @@ class RhythmRepository:
             pass
         repo = cls(path, readonly=False)
         with repo.connection(_initialize=True) as db:
-            db.executescript('''
-                CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                INSERT INTO metadata VALUES ('schema','rhythm-dnb-core-2');
-                CREATE TABLE observations(id TEXT PRIMARY KEY, participant TEXT NOT NULL,
-                    end_at TEXT NOT NULL, available_at TEXT NOT NULL, payload TEXT NOT NULL, hash TEXT NOT NULL);
-                CREATE TABLE panels(participant TEXT NOT NULL, day TEXT NOT NULL, version TEXT NOT NULL,
-                    payload TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(participant,day,version));
-                CREATE TABLE outcomes(id TEXT PRIMARY KEY, participant TEXT NOT NULL, payload TEXT NOT NULL);
-                CREATE TABLE predictions(id TEXT PRIMARY KEY, participant TEXT NOT NULL,
-                    issued_at TEXT NOT NULL, bundle_id TEXT NOT NULL, payload TEXT NOT NULL,
-                    UNIQUE(participant,issued_at,bundle_id));
-                CREATE TABLE audit(id INTEGER PRIMARY KEY, operation TEXT NOT NULL, content_hash TEXT NOT NULL);
-                CREATE INDEX observations_asof ON observations(participant,available_at,end_at);
-            ''')
+            db.executescript(STORE_SQL)
+            db.execute('INSERT INTO metadata VALUES (?,?)', ('schema', fingerprint(STORE_SQL)))
         return repo
 
     def append_observations(self, rows):
@@ -71,20 +74,20 @@ class RhythmRepository:
                             instant(row.available_at).isoformat(), canonical_json(row), fingerprint(row)))
             db.execute('INSERT INTO audit(operation,content_hash) VALUES (?,?)', ('append_observations', fingerprint(rows)))
 
-    def append_panel(self, panel, version='2'):
-        # PSEUDOCODE: insert immutable panel revision; never overwrite a previously used feature set.
-        if version != '2' or any(f.version != version for f in panel.features):
-            raise ValueError('Stored panel and measurement versions differ.')
+    def append_panel(self, panel):
+        # PSEUDOCODE: insert an immutable panel tied to its measurement definition; never overwrite a previously used feature set.
+        if any(f.measurement_id != MEASUREMENT_ID for f in panel.features):
+            raise ValueError('Stored panel and active measurement definitions differ.')
         with self.connection() as db:
             db.execute('INSERT INTO panels VALUES (?,?,?,?,?)',
-                       (panel.participant_id, panel.day.isoformat(), version, canonical_json(panel), fingerprint(panel)))
+                       (panel.participant_id, panel.day.isoformat(), MEASUREMENT_ID, canonical_json(panel), fingerprint(panel)))
             db.execute('INSERT INTO audit(operation,content_hash) VALUES (?,?)', ('append_panel', fingerprint(panel)))
 
-    def read_features_as_of(self, participant_id, as_of, *, version='2'):
+    def read_features_as_of(self, participant_id, as_of):
         # PSEUDOCODE: read only measurement panels -> remove unavailable features -> reconstruct contracts.
         with self.connection() as db:
-            rows = db.execute('SELECT payload,hash FROM panels WHERE participant=? AND version=? ORDER BY day',
-                              (participant_id, version)).fetchall()
+            rows = db.execute('SELECT payload,hash FROM panels WHERE participant=? AND measurement_id=? ORDER BY day',
+                              (participant_id, MEASUREMENT_ID)).fetchall()
         panels = []
         for row in rows:
             payload = json.loads(row['payload'])
