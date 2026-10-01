@@ -3,34 +3,39 @@
 import ast
 from functools import lru_cache
 from hashlib import sha256
-import io
 import json
 from pathlib import Path
-import tokenize
 
 
 def normalized_syntax(source):
-    # PSEUDOCODE: remove comments/docstrings -> normalize indentation -> retain executable token order.
+    # PSEUDOCODE: parse executable structure -> remove prose -> normalize optional interpreter fields.
     tree = ast.parse(source)
-    docstrings = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and ast.get_docstring(node):
-            statement = node.body[0]
-            docstrings.add((statement.lineno, statement.end_lineno))
-    tokens = []
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type in (tokenize.COMMENT, tokenize.NL, tokenize.ENDMARKER):
-            continue
-        if token.type in (tokenize.STRING, tokenize.NEWLINE) and any(start <= token.start[0] <= end for start, end in docstrings):
-            continue
-        value = '' if token.type in (tokenize.INDENT, tokenize.DEDENT) else token.string
-        tokens.append((tokenize.tok_name[token.type], value))
-    return json.dumps(tokens, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            node.body.pop(0)
+
+    def canonical(value):
+        # PSEUDOCODE: serialize syntax without positions or empty fields introduced by newer interpreters.
+        if isinstance(value, ast.AST):
+            fields = {name: canonical(item) for name, item in ast.iter_fields(value)
+                      if not (name in ('type_params', 'kind', 'type_comment') and not item)}
+            return [type(value).__name__, fields]
+        if isinstance(value, list):
+            return [canonical(item) for item in value]
+        if isinstance(value, bytes):
+            return {'bytes': value.hex()}
+        if isinstance(value, complex):
+            return {'complex': [value.real, value.imag]}
+        if value is Ellipsis:
+            return {'ellipsis': True}
+        return value
+
+    return json.dumps(canonical(tree), sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
 
 
 @lru_cache(maxsize=1)
 def measurement_identity():
-    # PSEUDOCODE: hash scientific calculation dependencies with a Python-release-independent token format.
+    # PSEUDOCODE: hash normalized scientific dependencies without manual release labels or machine paths.
     root = Path(__file__).resolve().parent
     paths = [path for name in ('measures', 'dnb', 'outcomes', 'warning') for path in (root / name).glob('*.py')]
     paths += [root / name for name in ('definitions.py', 'timebase.py', 'provenance.py', 'config.py', 'contracts.py',

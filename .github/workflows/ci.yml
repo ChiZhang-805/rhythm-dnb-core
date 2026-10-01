@@ -8,6 +8,29 @@ permissions:
   contents: read
 
 jobs:
+  definition-portability:
+    name: Calculation identity across Python environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Record calculation identity
+        run: python -c "from pathlib import Path; from rhythm_dnb.definitions import MEASUREMENT_ID; Path('definition-id.txt').write_text(MEASUREMENT_ID)"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check identity on another interpreter
+        run: python -c "from pathlib import Path; from rhythm_dnb.definitions import MEASUREMENT_ID; assert Path('definition-id.txt').read_text() == MEASUREMENT_ID"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Check identity on current interpreter
+        run: python -c "from pathlib import Path; from rhythm_dnb.definitions import MEASUREMENT_ID; assert Path('definition-id.txt').read_text() == MEASUREMENT_ID"
   test:
     name: Python 3.13 / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
