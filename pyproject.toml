@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rhythm-dnb-core"
+version = "0.2.0"
+description = "Auditable behavioral-rhythm DNB research and frozen inference"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<3", "tzdata>=2024.1"]
+
+[project.optional-dependencies]
+research = ["scikit-learn>=1.4,<2", "scipy>=1.11,<2"]
+plots = ["matplotlib>=3.8,<4"]
+text = ["torch>=2.4,<3", "transformers>=4.45,<6", "safetensors>=0.4,<1"]
+io = ["openpyxl>=3.1,<4", "pandas>=2,<4", "pyreadr>=0.5,<1"]
+
+[project.scripts]
+rhythm-dnb = "rhythm_dnb.cli:main"
+
+[project.urls]
+Repository = "https://github.com/ChiZhang-805/rhythm-dnb-core"
+Issues = "https://github.com/ChiZhang-805/rhythm-dnb-core/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

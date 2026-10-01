@@ -1,0 +1,892 @@
+{
+  "description": "Synthetic migration regression outputs captured from the previous DNB implementation on 2026-10-01. No participant data.",
+  "kernel": [
+    {
+      "seed": 0,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.8315536037065059,
+        "sd_in": 0.8953340108961294,
+        "pcc_in": 0.24031935043860253,
+        "pcc_out": 0.11747736320068163,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.14836080238062493,
+        "sed_in": 0.3240643314295958,
+        "spcc_in": 0.003049676051140246,
+        "spcc_out": 0.0066614039202492125,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 1,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.5666748866263245,
+        "sd_in": 0.8673809163535808,
+        "pcc_in": 0.3535735586746956,
+        "pcc_out": 0.19575405206249566,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.3875186668947346,
+        "sed_in": 0.6906252488763229,
+        "spcc_in": 0.016852858488291544,
+        "spcc_out": 0.03003470692397746,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 2,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 0.8014264650889237,
+        "sd_in": 0.9977294433252994,
+        "pcc_in": 0.1338042565381695,
+        "pcc_out": 0.16657853490721777,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.011683336700762164,
+        "sed_in": 0.2952441960483549,
+        "spcc_in": 0.0006479869474137617,
+        "spcc_out": 0.016374978333588835,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 3,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.347169568592162,
+        "sd_in": 1.0274308400224663,
+        "pcc_in": 0.1409883782100301,
+        "pcc_out": 0.10752603921206122,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 5.718302194886012,
+        "sed_in": 2.3493557970137857,
+        "spcc_in": 0.07855390270858607,
+        "spcc_out": 0.03227375196636533,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 4,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 2.948347152112082,
+        "sd_in": 0.9705107758139757,
+        "pcc_in": 0.19109322966939554,
+        "pcc_out": 0.06290237513122847,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.05753706204093226,
+        "sed_in": 0.4793384648872515,
+        "spcc_in": 0.0025125891301688297,
+        "spcc_out": 0.020932257814810163,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 5,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 0.6937951485315208,
+        "sd_in": 0.969258504420694,
+        "pcc_in": 0.13274786689741103,
+        "pcc_out": 0.18545387526326337,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.7385396899865296,
+        "sed_in": 1.0062214237753153,
+        "spcc_in": 0.019180891284746843,
+        "spcc_out": 0.026132953989472827,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 6,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 2.007828039937308,
+        "sd_in": 0.9990944343227666,
+        "pcc_in": 0.23671381858493323,
+        "pcc_out": 0.11778870200601455,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.48395975420950704,
+        "sed_in": 1.5482549421328198,
+        "spcc_in": 0.025344362198568726,
+        "spcc_out": 0.08108015943026407,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 7,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.4485683929377873,
+        "sd_in": 0.9461324418894848,
+        "pcc_in": 0.24112248866649155,
+        "pcc_out": 0.15748915281371537,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.18110607970581316,
+        "sed_in": 0.3702641739375311,
+        "spcc_in": 0.003252161613717136,
+        "spcc_out": 0.006648915019144286,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 8,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.9452293954986166,
+        "sd_in": 1.0123070617617307,
+        "pcc_in": 0.19428427048138466,
+        "pcc_out": 0.10110650160472127,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.715037721390929,
+        "sed_in": 1.5701960732429856,
+        "spcc_in": 0.034924808449634304,
+        "spcc_out": 0.0766935721652613,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    },
+    {
+      "seed": 9,
+      "classic": {
+        "valid": true,
+        "reason": null,
+        "score": 1.0252698280703876,
+        "sd_in": 0.9948051892528826,
+        "pcc_in": 0.21683838604693506,
+        "pcc_out": 0.21039529864513054,
+        "n_total": 30,
+        "n_valid": 30,
+        "module": [
+          "a",
+          "b",
+          "d"
+        ]
+      },
+      "single_sample": {
+        "valid": true,
+        "reason": null,
+        "score": 0.09182623398008756,
+        "sed_in": 0.44958874212399813,
+        "spcc_in": 0.0032850562598038258,
+        "spcc_out": 0.016083903778216994,
+        "n_total": 29,
+        "n_valid": 29,
+        "module": [
+          "a",
+          "b"
+        ],
+        "pair_convention": "paper_k_squared"
+      }
+    }
+  ],
+  "parsers": [
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        null
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        ""
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        true
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 1.0
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        "12.5"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 12.5
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        -1
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        0
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 0.0
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        400
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        "nan"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        "inf"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "lifesnaps",
+      "function": "_number",
+      "args": [
+        "invalid"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        null
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        ""
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        true
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 1.0
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        "12.5"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 12.5
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        -1
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        0
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 0.0
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        400
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        "nan"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        "inf"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "rest",
+      "function": "_number",
+      "args": [
+        "invalid"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        null
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        ""
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        true
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        "12.5"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 12.5
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        -1
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        0
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 0.0
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        400
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        "nan"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        "inf"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "delsom",
+      "function": "_number",
+      "args": [
+        "invalid"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        null
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        ""
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        true
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        "12.5"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 12.5
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        -1
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        0
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": 0.0
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        400
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        "nan"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        "inf"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "manchester",
+      "function": "_number",
+      "args": [
+        "invalid"
+      ],
+      "kwargs": {
+        "maximum": 100
+      },
+      "expected": null
+    },
+    {
+      "source": "sleep_diary",
+      "function": "_hole_minutes",
+      "args": [
+        "",
+        60
+      ],
+      "kwargs": {},
+      "expected": 0
+    },
+    {
+      "source": "sleep_diary",
+      "function": "_hole_minutes",
+      "args": [
+        "0-10",
+        60
+      ],
+      "kwargs": {},
+      "expected": 10
+    },
+    {
+      "source": "sleep_diary",
+      "function": "_hole_minutes",
+      "args": [
+        "10-20|15-25",
+        60
+      ],
+      "kwargs": {},
+      "expected": 15
+    },
+    {
+      "source": "sleep_diary",
+      "function": "_hole_minutes",
+      "args": [
+        "20-30|0-5|5-10",
+        60
+      ],
+      "kwargs": {},
+      "expected": 20
+    }
+  ],
+  "schema": {
+    "input": {
+      "record_id": "1",
+      "participant_id": "p",
+      "observed_at": "2025-01-01T00:00:00+00:00",
+      "source_dataset": "test",
+      "split": "train",
+      "sleep_duration_h": 8
+    },
+    "expected": {
+      "record_id": "1",
+      "participant_id": "p",
+      "observed_at": "2025-01-01T00:00:00+00:00",
+      "source_dataset": "test",
+      "split": "train",
+      "exercise_type": null,
+      "text_model_id": null,
+      "rhythm_state_gt": null,
+      "label_observed_at": null,
+      "event_onset_at": null,
+      "followup_end_at": null,
+      "label_source": null,
+      "sleep_start_hour": null,
+      "sleep_end_hour": null,
+      "sleep_duration_h": 8.0,
+      "time_in_bed_h": null,
+      "nap_count": null,
+      "nap_duration_min": null,
+      "late_night_eating_flag": null,
+      "breakfast_kcal": null,
+      "lunch_kcal": null,
+      "dinner_kcal": null,
+      "water_ml": null,
+      "caffeine_mg": null,
+      "caffeine_last_hour": null,
+      "meal_interval_cv": null,
+      "exercise_minutes": null,
+      "exercise_hour": null,
+      "heart_rate_bpm": null,
+      "resting_hr_bpm": null,
+      "hr_max_bpm": null,
+      "hr_sd_bpm": null,
+      "skin_temp_c": null,
+      "spo2_pct": null,
+      "spo2_min_pct": null,
+      "stress_score": null,
+      "general_mood": null,
+      "energy_score": null,
+      "self_rated_state": null,
+      "fatigue_score": null,
+      "social_interaction_min": null,
+      "social_contact_count": null,
+      "ambient_temp_c": null,
+      "noise_db": null,
+      "screen_time_min": null,
+      "text_mood_valence": null,
+      "text_joy_intensity": null,
+      "text_sadness_intensity": null,
+      "text_anxiety_intensity": null,
+      "text_irritability_intensity": null,
+      "text_appetite_loss_intensity": null,
+      "text_excess_intake_intensity": null,
+      "text_meal_irregularity_intensity": null,
+      "text_sleep_quality": null,
+      "text_sleep_onset_difficulty": null,
+      "text_sleep_disruption_intensity": null,
+      "text_post_sleep_fatigue": null,
+      "text_social_willingness": null,
+      "text_social_satisfaction": null,
+      "text_loneliness_intensity": null,
+      "text_social_burden_intensity": null,
+      "warnings": [],
+      "provenance": {}
+    }
+  }
+}

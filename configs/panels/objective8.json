@@ -1,0 +1,45 @@
+{
+  "id": "objective8",
+  "features": [
+    {
+      "name": "sleep_midpoint_h",
+      "unit": "hour",
+      "circular": true
+    },
+    {
+      "name": "sleep_duration_h",
+      "unit": "hour",
+      "circular": false
+    },
+    {
+      "name": "first_caloric_h",
+      "unit": "hour",
+      "circular": true
+    },
+    {
+      "name": "last_caloric_h",
+      "unit": "hour",
+      "circular": true
+    },
+    {
+      "name": "activity_m10_start_h",
+      "unit": "hour",
+      "circular": true
+    },
+    {
+      "name": "activity_ra",
+      "unit": "ratio",
+      "circular": false
+    },
+    {
+      "name": "activity_total",
+      "unit": "count",
+      "circular": false
+    },
+    {
+      "name": "resting_hr_bpm",
+      "unit": "bpm",
+      "circular": false
+    }
+  ]
+}
