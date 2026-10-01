@@ -32,15 +32,17 @@ def calibrate(rows, config, reference, discovery, cutoff, *, method='single_samp
     if registry is not None and any(instant(e.confirmed_at) > instant(cutoff) or e.participant_id not in people for e in registry):
         raise ValueError('Calibration event registry has unavailable or out-of-partition events.')
     event_keys = {(e.participant_id, e.onset) for e in registry} if registry is not None else {(r.participant_id, r.onset) for r in rows if r.label == 1}
+    event_people = len({person for person, _ in event_keys})
     negatives = sum(r.label == 0 and r.score is not None for r in rows)
     event_metrics(rows, None, events=registry, monitoring=monitoring, horizon_days=config.horizon_days,
                   min_lead_hours=config.min_lead_hours, confirmation_days=config.persistence_days - 1)
     payload = {'reference_id': reference['id'], 'discovery_id': discovery['id'], 'people': people,
                'cutoff': instant(cutoff).isoformat(), 'method': method, 'threshold': None,
                'minimum_events': minimum_events, 'minimum_negative_days': minimum_negative_days,
+               'event_people': event_people, 'minimum_events_unit': 'independent_event_participants',
                'monitoring_id': fingerprint(monitoring) if monitoring is not None else None,
                'status': 'insufficient_outcomes', 'selection': None, 'candidates': []}
-    if len(event_keys) >= minimum_events and negatives >= minimum_negative_days and discovery['modules']:
+    if event_people >= minimum_events and negatives >= minimum_negative_days and discovery['modules']:
         scores = np.asarray([r.score for r in rows if r.score is not None], dtype=float)
         if not np.isfinite(scores).all() or np.any(scores < 0):
             raise ValueError('Invalid calibration scores.')

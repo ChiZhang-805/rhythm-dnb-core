@@ -1,31 +1,69 @@
 """Calibrate evidence acceptance on separate people; unknown scores never become zero."""
 
 import math
+from hashlib import sha256
 from .schema import METRICS
 
+METHOD = 'validation_threshold_independent_people_exact_bonferroni'
 
-def calibrate_evidence(rows, predictions, *, target_precision, minimum):
-    # PSEUDOCODE: use calibration labels only -> find maximal coverage meeting precision -> retain absent thresholds.
-    if len(rows) != len(predictions) or type(minimum) is not int or minimum < 1 or not 0 < target_precision <= 1:
+
+def _person_pairs(rows, predictions, key):
+    # PSEUDOCODE: choose one row per person using identity alone, so repeated texts do not inflate sample size.
+    chosen = {}
+    for row, prediction in zip(rows, predictions):
+        if key not in row['scores']:
+            continue
+        value = prediction['evidence'][key]
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError('Invalid evidence probability.')
+        order = sha256((key + '\0' + row['example_id']).encode()).hexdigest()
+        person = row['participant_id']
+        if person not in chosen or order < chosen[person][0]:
+            chosen[person] = (order, value, row['scores'][key] is not None)
+    return [(value, known) for _, value, known in chosen.values()]
+
+
+def calibrate_evidence(rows, predictions, *, selection_rows, selection_predictions, target_precision, alpha=.05):
+    # PSEUDOCODE: select thresholds on validation -> freeze -> certify once on independent calibration people.
+    from scipy.stats import beta
+    if (len(rows) != len(predictions) or len(selection_rows) != len(selection_predictions)
+            or type(target_precision) not in (int, float) or not 0 < target_precision < 1
+            or type(alpha) not in (int, float) or not 0 < alpha < 1):
         raise ValueError('Invalid evidence calibration inputs.')
+    all_rows = [*rows, *selection_rows]
+    if any(any(not isinstance(r.get(k), str) or not r[k].strip() for k in ('example_id', 'participant_id')) for r in all_rows):
+        raise ValueError('Evidence calibration requires example and participant identities.')
+    if len({r['example_id'] for r in all_rows}) != len(all_rows) or {r['participant_id'] for r in rows} & {r['participant_id'] for r in selection_rows}:
+        raise ValueError('Threshold selection and certification must use independent people/examples.')
+    per_metric_alpha = alpha / len(METRICS)
     thresholds = {}
     for key, *_ in METRICS:
-        pairs = [(p['evidence'][key], r['scores'][key] is not None) for r, p in zip(rows, predictions) if key in r['scores']]
-        if any(not math.isfinite(v) or not 0 <= v <= 1 for v, _ in pairs):
-            raise ValueError('Invalid evidence probability.')
+        selection = _person_pairs(selection_rows, selection_predictions, key)
+        pairs = _person_pairs(rows, predictions, key)
         positives = sum(known for _, known in pairs)
-        item = {'threshold': None, 'n': len(pairs), 'known': positives, 'accepted': 0,
-                'precision': None, 'status': 'insufficient_evidence_calibration'}
-        if positives >= minimum and len(pairs) - positives >= minimum:
-            for threshold in sorted({v for v, _ in pairs}):
-                selected = [known for v, known in pairs if v >= threshold]
-                if len(selected) >= minimum and sum(selected) / len(selected) >= target_precision:
-                    item.update(threshold=threshold, accepted=len(selected), precision=sum(selected) / len(selected), status='calibrated')
+        candidate = None
+        if any(known for _, known in selection) and any(not known for _, known in selection):
+            for threshold in sorted({value for value, _ in selection}):
+                accepted = [known for value, known in selection if value >= threshold]
+                if sum(accepted) / len(accepted) >= target_precision:
+                    candidate = threshold
                     break
+        item = {'threshold': None, 'n': len(pairs), 'known': positives, 'accepted': 0,
+                'precision': None, 'precision_lower': 0., 'candidate_threshold': candidate,
+                'status': 'insufficient_evidence_calibration'}
+        if candidate is not None:
+            accepted = [known for value, known in pairs if value >= candidate]
+            n, correct = len(accepted), sum(accepted)
+            lower = float(beta.ppf(per_metric_alpha, correct, n - correct + 1)) if correct else 0.
+            item.update(accepted=n, correct=correct, precision=correct / n if n else None, precision_lower=lower)
+            if lower >= target_precision:
+                item.update(threshold=candidate, status='calibrated')
         thresholds[key] = item
-    return {'source': 'separate_calibration_people', 'target_precision': target_precision,
-            'minimum_per_class': minimum, 'thresholds': thresholds,
-            'interpretation': 'empirical_calibration_target_not_a_population_guarantee'}
+    return {'source': 'separate_calibration_people', 'method': METHOD, 'target_precision': target_precision,
+            'alpha': alpha, 'per_metric_alpha': per_metric_alpha,
+            'minimum_accepted_if_all_correct': math.ceil(math.log(per_metric_alpha) / math.log(target_precision)),
+            'thresholds': thresholds, 'sampling': 'one_identity_selected_text_per_person_per_metric',
+            'interpretation': 'requires_independent_representative_people_and_frozen_selection_not_a_clinical_guarantee'}
 
 
 def qualified_scores(scores, evidence, calibration):
@@ -36,6 +74,8 @@ def qualified_scores(scores, evidence, calibration):
             raise ValueError('Invalid intensity or evidence estimate.')
         policy = (calibration or {}).get('thresholds', {}).get(key, {})
         threshold = policy.get('threshold')
+        if threshold is not None and (calibration or {}).get('method') != METHOD:
+            raise ValueError('Evidence thresholds require independent statistical certification.')
         if threshold is not None and (type(threshold) not in (int, float) or not math.isfinite(threshold) or not 0 <= threshold <= 1 or policy.get('status') != 'calibrated'):
             raise ValueError('Invalid frozen evidence threshold.')
         accepted = threshold is not None and evidence[key] >= threshold

@@ -31,7 +31,11 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
 
 多卡等待主进程验证和保存时，`process_timeout_minutes` 默认 120 分钟；超大验证集或慢共享磁盘需按实际耗时调整。运行记录同时保存 PyTorch、Transformers、PEFT 等库版本。
 
-参数的理由和调整范围见 [参数表](parameters.csv)。它们是待验证起点，不是已经寻优的最优值。先在验证集比较学习率、LoRA 秩、长度和损失权重；校准集只确定每个指标的证据接收门槛，测试集只在选定模型后使用一次。证据目标精度 0.95 是经验接收目标，不是总体保证；每类至少 20 条只是运行门槛。
+参数的理由、依据类别和调整范围见 [参数表](parameters.csv)。QLoRA 原 7B 实验采用秩 64、alpha 16、学习率 2e-4；本项目是另一种回归任务，不能照搬并称为最优。目前秩 16 和学习率 1e-4 是资源较保守的待验证起点。
+
+调参时给 `train-text` 加 `--development-only`，输入文件只能含训练集和验证集；程序拒收校准、测试行。比较学习率、秩、长度和损失权重后锁定配置，再执行一次完整训练。不要反复运行完整流程挑测试成绩。
+
+每项证据门槛先在验证组选定，再在独立校准组检验，失败不重新搜索门槛。每人每项按记录身份的固定哈希选一条，避免重复文本虚增人数。接收条件是精度的单侧 [Clopper–Pearson 下界](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats._result_classes.BinomTestResult.proportion_ci.html)达到 0.95，17 项 Bonferroni 分配总 alpha=0.05；全正确也至少需 114 位被接收者。0.95 是预登记使用目标，保证依赖参与者独立、校准样本代表实际输入且未被人为正负平衡等条件；不是临床有效性保证。证据不足输出 `null`。
 
 `execution.json` 记录设备和精度；`history.json` 记录每轮损失及更新；`model/` 保存适配器、评分头、分词器和文件哈希；`result.json` 与 `test-predictions.json` 保存测试结果（后者不含原文）。Qwen 推理必须同时提供原底座与适配器，不能随便换一个 `.pt/.pth` 文件。检查点不含完整优化器续训状态。
 
@@ -44,4 +48,6 @@ python -m rhythm_dnb plot-text --result /runs/text-training/result.json \
 
 图表显示各项误差、证据覆盖、评分波动幅度、误差相关和人工/模型散点。需要 `observed_at` 的同人重复标注才能评价个人变化；横断面成绩不能替代这一项。小模型测试只验证软件，真实训练和服务器多卡性能须另行报告。
 
-实现依据：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-8B)、[QLoRA](https://arxiv.org/abs/2305.14314)、[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)。
+下载支持分段续传，核对固定提交的官方文件大小、SHA-256/Git 摘要及全部权重分片，再生成 `download.json`；该文件存在且校验通过才代表底座完整。完整底座不等于已完成本项目微调。
+
+实现依据：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-8B)、[QLoRA 官方 7B 配置](https://github.com/artidoro/qlora/blob/main/scripts/finetune_guanaco_7b.sh)、[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)。

@@ -27,6 +27,18 @@ UTC = timezone.utc
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_recurrent_events_cannot_inflate_calibration_participant_count(self):
+        from rhythm_dnb.research.calibrate import calibrate
+        from rhythm_dnb.contracts import MonitoringPeriod
+        t = datetime(2025, 1, 1, 12, tzinfo=UTC)
+        rows = [EvaluationDay('p', t, 1., 0, None, t + timedelta(days=10), 'UTC')]
+        events = [OutcomeEvent('p', t + timedelta(days=d), t + timedelta(days=d + 2)) for d in (30, 60)]
+        config = replace(StudyConfig(), calibration_min_events=2, calibration_min_negative_days=1)
+        result = calibrate(rows, config, {'id': 'r', 'people': []}, {'id': 'd', 'people': [], 'modules': [[0, 1]]},
+            t + timedelta(days=100), events=events, monitoring=[MonitoringPeriod('p', t.date(), t.date(), 'UTC')])
+        self.assertEqual(result['status'], 'insufficient_outcomes')
+        self.assertEqual(result['event_people'], 1)
+
     def test_endpoint_thresholds_reject_impossible_input_values(self):
         from rhythm_dnb.outcomes.criteria import fit_criteria
         t = datetime(2025, 1, 1, tzinfo=UTC)
@@ -289,7 +301,7 @@ class ReviewRegressions(unittest.TestCase):
         from rhythm_dnb.dnb.reference import fit_reference
         from rhythm_dnb.research.discover import discover
         c = make_cohort()
-        reference = fit_reference(c['reference'], OBJECTIVE8, c['reference_cutoff'])
+        reference = fit_reference(c['reference'], OBJECTIVE8, c['reference_cutoff'], minimum=c['config'].reference_min_people)
         p = c['pairs'][0]
         late = replace(p.pre_event_panel, features=tuple(replace(f, available_at=p.evidence_available_at) for f in p.pre_event_panel.features))
         with self.assertRaisesRegex(ValueError, 'source-backed'):

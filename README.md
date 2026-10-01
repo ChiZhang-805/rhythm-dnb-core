@@ -29,6 +29,8 @@ python -m rhythm_dnb --help
 
 入口是 `src/rhythm_dnb/workflows/`；数学计算在 `dnb/`，量化在 `measures/` 和 `text/`，输入输出在 `io/`。配置集中在 `configs/`。
 
+本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
+
 ## 只保留四份说明
 
 - [研究方案](docs/research.md)：预测目标、DNB 计算和验证方法。
@@ -37,5 +39,7 @@ python -m rhythm_dnb --help
 - [参数表](docs/parameters.csv)：默认值、依据和调整建议。
 
 软件检查：`python -m unittest discover -s tests -q`；逐文件扫描：`python tools/audit_project.py --output-dir runs/code-audit`。测试中的人工小数据仅用于核对程序，不是训练语料，也不产生科研结论。
+
+发布包用 `python tools/build_wheel.py --output-dir dist`（目录须尚不存在）；从新建的源码副本构建，并逐一核对包内代码，防止旧 `build/` 文件混入。新增源文件先加入 Git 跟踪。
 
 注释约定：模块开头一句说明职责；函数内用一条 `PSEUDOCODE` 注释交代计算顺序，额外注释只解释容易误解的依据。修改沿用原文件，计算规则的兼容性由内容指纹自动检查。

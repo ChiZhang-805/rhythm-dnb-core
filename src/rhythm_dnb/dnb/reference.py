@@ -18,7 +18,7 @@ class ReferenceCandidate:
     baseline: bool = True
 
 
-def fit_reference(candidates, features, cutoff, *, minimum=60, seed=20261001):
+def fit_reference(candidates, features, cutoff, *, minimum=100, seed=20261001):
     # PSEUDOCODE: validate stable evidence/as-of data -> group eligible days -> draw one per person.
     from ..warning.windows import panel_vector
     cutoff = instant(cutoff)

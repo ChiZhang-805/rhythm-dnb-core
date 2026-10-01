@@ -6,9 +6,11 @@ import csv
 from dataclasses import asdict
 from hashlib import sha256
 import json
+import math
 from pathlib import Path
 import re
 import tomllib
+from statistics import NormalDist
 
 
 def scan(root):
@@ -79,6 +81,9 @@ def check_configs(root):
     parameters = {row['parameter']: row for row in rows}
     if len(parameters) != len(rows):
         findings.append('docs/parameters.csv: duplicate parameter')
+    for row in rows:
+        if not row.get('basis_status') or not row.get('source_or_selection') or not row.get('adjustment'):
+            findings.append('docs/parameters.csv: missing basis/selection route for ' + row['parameter'])
     for name, value in {**asdict(StudyConfig()), **{('text_seed' if k == 'seed' else k): v for k, v in training.items()}}.items():
         actual = parameters.get(name, {}).get('default')
         if isinstance(value, (tuple, list)):
@@ -90,6 +95,23 @@ def check_configs(root):
         if not matched:
             findings.append('docs/parameters.csv: default mismatch for ' + name)
     return findings
+
+
+def parameter_precision():
+    # PSEUDOCODE: expose the uncertainty implied by configured sample counts; never certify biological validity.
+    from rhythm_dnb.config import StudyConfig
+    config = StudyConfig()
+    z = NormalDist().inv_cdf(.975)
+    return {'reference_correlation_95_halfwidth_near_zero': math.tanh(z / math.sqrt(config.reference_min_people - 3)),
+            'endpoint_nominal_tail_people': config.endpoint_min_people * (1 - config.threshold_quantile),
+            'event_sensitivity_approximate_worst_95_halfwidth': z * math.sqrt(.25 / config.calibration_min_events),
+            'bootstrap_worst_mcse': math.sqrt(.25 / config.bootstrap_repetitions),
+            'permutation_resolution': 1 / (config.permutation_repetitions + 1),
+            'permutation_mcse_at_alpha': math.sqrt(config.discovery_alpha * (1 - config.discovery_alpha) / config.permutation_repetitions),
+            'limitations': ['Independent-person approximations, not simultaneous correlation intervals.',
+                           'Repeated windows are not new independent participants.',
+                           'Negative-day floor is only an execution guard, not adequate validation exposure.',
+                           'Windows, endpoints, alarm budgets and text hyperparameters require real-cohort validation.']}
 
 
 def main():
@@ -104,6 +126,7 @@ def main():
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=False)
     report = {'files': inventory, 'file_count': len(inventory), 'findings': findings,
+              'parameter_precision': parameter_precision(),
               'scope': 'Static consistency checks; this is not scientific or human code-review certification.'}
     (output / 'source-audit.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
     if args.database:

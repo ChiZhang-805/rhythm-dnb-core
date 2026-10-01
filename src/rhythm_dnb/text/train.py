@@ -90,7 +90,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             'optimizer_steps': updates, 'overflow_skipped_steps': skipped}
 
 
-def _train(partitions, corpus, base_path, base_id, output_path, config, runtime):
+def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False):
     # PSEUDOCODE: initialize shared inputs -> shard training -> select on validation -> test the chosen model once.
     import torch
     from torch.nn.parallel import DistributedDataParallel
@@ -98,7 +98,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
     from transformers import get_linear_schedule_with_warmup
     from .model import ScoringModel
     from .runtime import ShardedBatches
-    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config})
+    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only})
     if len(set(runtime.gather(signature))) != 1:
         raise ValueError('Processes received different corpora, base files or training settings.')
     random.seed(config['seed'])
@@ -119,7 +119,8 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
         core.encoder.config.use_cache = False
         core.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     optimizer = torch.optim.AdamW([{'params': [p for p in core.encoder.parameters() if p.requires_grad], 'lr': config['encoder_lr']},
-                                  {'params': list(core.heads.parameters()) + list(core.evidence_heads.parameters()), 'lr': config['head_lr']}], weight_decay=config['weight_decay'])
+                                  {'params': list(core.heads.parameters()) + list(core.evidence_heads.parameters()), 'lr': config['head_lr']}],
+                                  weight_decay=config['weight_decay'], betas=(config['adam_beta1'], config['adam_beta2']), eps=config['adam_epsilon'])
     model = DistributedDataParallel(core, device_ids=[runtime.device.index] if runtime.device.type == 'cuda' else None,
                                     broadcast_buffers=False) if runtime.world_size > 1 else core
     microbatches = math.ceil(len(datasets['train']) / (config['batch_size'] * runtime.world_size))
@@ -156,6 +157,11 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
     del loader, model, core, optimizer, scheduler, scaler
     if runtime.device.type == 'cuda':
         torch.cuda.empty_cache()
+    if development_only:
+        result = {'best_checkpoint': best_path, 'corpus': corpus, 'execution': execution, 'history': history,
+                  'validation_mae': best, 'test': None, 'status': 'development_only_uncalibrated'}
+        runtime.primary(lambda: (output_path / 'result.json').write_text(canonical_json(result), encoding='utf-8'))
+        return result
 
     def finish():
         # PSEUDOCODE: reload the selected checkpoint -> evaluate untouched test rows -> save one final report.
@@ -163,7 +169,9 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
         calibration_rows = partitions.get('calibration', [])
         calibration_predictions = predict_rows(selected, selected_tokenizer, calibration_rows, config, runtime.device) if calibration_rows else []
         evidence = calibrate_evidence(calibration_rows, calibration_predictions,
-            target_precision=config['evidence_precision'], minimum=config['evidence_min_samples'])
+            selection_rows=partitions['validation'],
+            selection_predictions=predict_rows(selected, selected_tokenizer, partitions['validation'], config, runtime.device),
+            target_precision=config['evidence_precision'], alpha=config['evidence_alpha'])
         metadata = {k: v for k, v in manifest.items() if k not in ('files', 'status', 'storage', 'contract', 'config', 'purpose')}
         final_path = save_checkpoint(output_path / 'model', selected, selected_tokenizer, config, {**metadata, 'evidence_calibration': evidence})
         identity = file_hash(final_path / 'manifest.json')
@@ -179,12 +187,12 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
     return runtime.primary(finish)
 
 
-def train(rows, base_path, output_path, config):
+def train(rows, base_path, output_path, config, *, development_only=False):
     # PSEUDOCODE: require reviewed real-source corpus and verified base files before starting training.
     from .runtime import TrainingRuntime
     config = validate_config(config)
-    partitions, corpus = prepare_corpus(rows, require_calibration=config['model_id'] == 'Qwen/Qwen3-8B')
+    partitions, corpus = prepare_corpus(rows, require_calibration=config['model_id'] == 'Qwen/Qwen3-8B', development_only=development_only)
     base_path, output_path = Path(base_path).resolve(), Path(output_path).resolve()
     base_id = _check_base(base_path, config)
     with TrainingRuntime(config) as runtime:
-        return _train(partitions, corpus, base_path, base_id, output_path, config, runtime)
+        return _train(partitions, corpus, base_path, base_id, output_path, config, runtime, development_only=development_only)

@@ -79,7 +79,7 @@ class ScoringModel(nn.Module):
         return result
 
 
-def regression_loss(outputs, labels, categories, delta=0.1, *, reduction='mean', evidence_weight=1.):
+def regression_loss(outputs, labels, categories, delta=0.1, *, reduction='mean', evidence_weight=0.1):
     # PSEUDOCODE: mask unknown intensities -> learn evidence separately -> average per sample with all DDP heads linked.
     losses = [None] * len(categories)
     for category, (_, keys) in CATEGORIES.items():

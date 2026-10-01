@@ -63,6 +63,7 @@ def main(argv=None):
     criteria = sub.add_parser('fit-endpoint'); criteria.add_argument('--input', required=True); criteria.add_argument('--study', required=True); criteria.add_argument('--cutoff', required=True); criteria.add_argument('--output', required=True)
     endpoint = sub.add_parser('endpoints'); endpoint.add_argument('--input', required=True); endpoint.add_argument('--study', required=True); endpoint.add_argument('--as-of', required=True); endpoint.add_argument('--output', required=True)
     train = sub.add_parser('train-text'); train.add_argument('--corpus', required=True); train.add_argument('--base', required=True); train.add_argument('--config', required=True); train.add_argument('--output-dir', required=True)
+    train.add_argument('--development-only', action='store_true', help='Tune using a train/validation-only corpus; never calibrate or test')
     text = sub.add_parser('score-text'); text.add_argument('--checkpoint', required=True); text.add_argument('--category', required=True); text.add_argument('--text', required=True); text.add_argument('--output', required=True)
     text.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
     text.add_argument('--base', help='Exact local base weights required for Qwen adapters')
@@ -142,7 +143,7 @@ def main(argv=None):
         print(canonical_json(plot_evaluation(_read(args.result), _read(args.predictions), args.output_dir))); return 0
     elif args.command == 'train-text':
         from .text.train import train as fit_text
-        result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config))
+        result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config), development_only=args.development_only)
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']}))
         return 0

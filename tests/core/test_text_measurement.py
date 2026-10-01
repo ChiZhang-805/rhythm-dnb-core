@@ -38,7 +38,7 @@ def qwen_fixture(root):
         'max_length': 512, 'batch_size': 3, 'gradient_accumulation': 2, 'epochs': 1, 'patience': 1,
         'encoder_lr': .001, 'head_lr': .001, 'weight_decay': .01, 'warmup_ratio': 0.,
         'huber_delta': .1, 'dropout': 0., 'max_grad_norm': 1., 'threads': 1, 'device': 'cpu',
-        'precision': 'fp32', 'lora_rank': 2, 'lora_alpha': 4, 'evidence_min_samples': 1})
+        'precision': 'fp32', 'lora_rank': 2, 'lora_alpha': 4})
     receipt = {'model_id': config['model_id'], 'revision': config['revision'],
                'files': {p.name: file_hash(p) for p in base.iterdir() if p.is_file()}}
     (base / 'download.json').write_text(json.dumps(receipt), encoding='utf-8')
@@ -118,17 +118,37 @@ class TextMeasurementTests(unittest.TestCase):
 
     def test_evidence_cutoff_comes_from_separate_data_and_can_fail(self):
         key = 'stress_intensity'
-        rows = [{'scores': {key: score}} for score in (None, None, 30., 70.)]
+        rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: score}}
+                for i, score in enumerate((None, None, 30., 70.))]
         predictions = [{'evidence': {key: value}} for value in (.1, .6, .7, .9)]
-        policy = calibrate_evidence(rows, predictions, target_precision=1., minimum=2)
+        calibration = [{'example_id': 'c' + str(i), 'participant_id': 'c' + str(i), 'scores': {key: 50.}} for i in range(114)]
+        calibration_predictions = [{'evidence': {key: .8}} for _ in calibration]
+        options = dict(selection_rows=rows, selection_predictions=predictions, target_precision=.95)
+        policy = calibrate_evidence(calibration, calibration_predictions, **options)
+        self.assertEqual(policy['minimum_accepted_if_all_correct'], 114)
         self.assertEqual(policy['thresholds'][key]['threshold'], .7)
+        self.assertGreaterEqual(policy['thresholds'][key]['precision_lower'], .95)
         accepted, _ = qualified_scores({key: 0.}, {key: .8}, policy)
         self.assertEqual(accepted[key], 0.)
         rejected, reason = qualified_scores({key: 80.}, {key: .65}, policy)
         self.assertIsNone(rejected[key])
         self.assertEqual(reason[key], 'insufficient_text_evidence')
-        failed = calibrate_evidence(rows, predictions, target_precision=1., minimum=3)
+        failed = calibrate_evidence(calibration[:20], calibration_predictions[:20], **options)
         self.assertIsNone(failed['thresholds'][key]['threshold'])
+        self.assertEqual(failed['thresholds'][key]['candidate_threshold'], .7)
+        # Calibration failures cannot be repaired by searching a new cutoff on the same people.
+        calibration[0]['scores'][key] = None
+        failed = calibrate_evidence(calibration, calibration_predictions, **options)
+        self.assertIsNone(failed['thresholds'][key]['threshold'])
+        self.assertEqual(failed['thresholds'][key]['candidate_threshold'], .7)
+        for row in calibration:
+            row['participant_id'] = 'one-person'
+        repeated = calibrate_evidence(calibration, calibration_predictions, **options)
+        self.assertEqual(repeated['thresholds'][key]['n'], 1)
+        self.assertIsNone(repeated['thresholds'][key]['threshold'])
+        calibration[0]['participant_id'] = rows[0]['participant_id']
+        with self.assertRaisesRegex(ValueError, 'independent'):
+            calibrate_evidence(calibration, calibration_predictions, **options)
 
     def test_main_corpus_requires_independent_calibration_and_missing_labels(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -138,6 +158,18 @@ class TextMeasurementTests(unittest.TestCase):
             rows[-1]['participant_id'] = rows[0]['participant_id']
             with self.assertRaisesRegex(ValueError, 'Cross-split'):
                 prepare_corpus(rows, require_calibration=True)
+
+    def test_development_mode_cannot_consume_calibration_or_test(self):
+        from rhythm_dnb.text.train import train
+        with tempfile.TemporaryDirectory() as folder:
+            base, config, rows = qwen_fixture(folder)
+            with self.assertRaisesRegex(ValueError, 'exclude calibration and test'):
+                train(rows, base, Path(folder) / 'invalid', config, development_only=True)
+            development = [r for r in rows if r['split'] in ('train', 'validation')]
+            result = train(development, base, Path(folder) / 'development', config, development_only=True)
+            self.assertIsNone(result['test'])
+            self.assertEqual(set(result['corpus']['counts']), {'train', 'validation'})
+            self.assertFalse((Path(folder) / 'development' / 'test-predictions.json').exists())
 
     def test_every_text_category_reaches_quantification(self):
         from rhythm_dnb.contracts import Observation, Provenance

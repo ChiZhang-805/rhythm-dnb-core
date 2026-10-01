@@ -50,7 +50,8 @@ def make_cohort(*, seed=20261001, panel_id='objective8', people_per_role=20, dev
     # PSEUDOCODE: build artificial contract fixtures with disjoint people, complete registries and explicit calendars.
     from rhythm_dnb.workflows.develop import LabeledCase
     rng = np.random.default_rng(seed); features = get_panel(panel_id); p = len(features)
-    config = StudyConfig(panel_id=panel_id, seed=seed, bootstrap_repetitions=40)
+    config = StudyConfig(panel_id=panel_id, seed=seed, reference_min_people=60, endpoint_min_people=60,
+                         calibration_min_events=10, bootstrap_repetitions=40, permutation_repetitions=999)
     model_id = 'unit-test-semantic-model' if panel_id == 'joint12' else None
     reference = []
     for i in range(config.reference_min_people):

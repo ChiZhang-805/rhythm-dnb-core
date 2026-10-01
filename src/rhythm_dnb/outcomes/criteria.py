@@ -41,7 +41,7 @@ def weighted_quantile(values, weights, quantile):
     return float(x[order][min(len(x) - 1, np.searchsorted(np.cumsum(w[order]), quantile * w.sum()))])
 
 
-def fit_criteria(stable_people, cutoff, *, quantile=.95, minimum_people=60):
+def fit_criteria(stable_people, cutoff, *, quantile=.95, minimum_people=200):
     """Each person supplies anchor, stable evidence and follow-up domain measurements.
 
     Schema: participant_id, anchor, stable=True, evidence_id, available_at, values

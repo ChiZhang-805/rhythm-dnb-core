@@ -18,13 +18,13 @@ class StudyConfig:
     rolling_days: int = 28
     rolling_min_days: int = 23
     max_missing_run: int = 2
-    reference_min_people: int = 60
-    endpoint_min_people: int = 60
+    reference_min_people: int = 100
+    endpoint_min_people: int = 200
     module_sizes: tuple[int, ...] = (2, 3, 4)
     module_stability: float = .7
     max_modules: int = 5
-    bootstrap_repetitions: int = 1000
-    permutation_repetitions: int = 999
+    bootstrap_repetitions: int = 10000
+    permutation_repetitions: int = 9999
     discovery_alpha: float = .05
     threshold_quantile: float = .95
     alarm_consecutive: int = 2
@@ -32,7 +32,7 @@ class StudyConfig:
     horizon_days: int = 7
     min_lead_hours: int = 24
     max_false_alarms_per_30_days: float = 1.
-    calibration_min_events: int = 10
+    calibration_min_events: int = 100
     calibration_min_negative_days: int = 30
     epsilon: float = 1e-8
     seed: int = 20261001

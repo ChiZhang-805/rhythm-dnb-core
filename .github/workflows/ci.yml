@@ -57,7 +57,7 @@ jobs:
       - name: Build and install wheel
         shell: bash
         run: |
-          python -m pip wheel --no-deps . --wheel-dir dist
+          python tools/build_wheel.py --output-dir dist
           python -m pip install "$(find dist -name '*.whl' -print -quit)[research,text,io,plots]"
       - name: Verify installed-package boundary
         run: python -c "import pathlib, rhythm_dnb; p=pathlib.Path(rhythm_dnb.__file__).resolve(); print(p); assert pathlib.Path('src').resolve() not in p.parents"
