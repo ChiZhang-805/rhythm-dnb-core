@@ -4,27 +4,43 @@
 
 ## 准备和启动
 
-先按 [PyTorch 官方说明](https://pytorch.org/get-started/locally/) 安装服务器驱动适配的 CUDA 环境，再安装 `.[research,text,quantized,io,plots]`。执行 `python -m rhythm_dnb hardware` 查看实际设备。以下为 Linux 命令，路径替换为服务器路径，输出目录必须尚不存在。
+进入服务器上的 `rhythm-dnb-core` 目录后，先设置路径。每次打开新终端都执行这两行；换服务器只需先进入新的项目目录。不要沿用本机 `Q:` 路径，也不需要在系统根目录创建 `/data` 或 `/models`。
+
+```sh
+export DNB_ROOT="$(pwd -P)"
+mkdir -p "$DNB_ROOT/models" "$DNB_ROOT/runs" "$DNB_ROOT/cache"
+```
+
+代码通过 GitHub 下载；数据库和原始数据单独通过 SFTP 上传。已准备的 `dnb-data.zip` 和同名 `.sha256` 放在项目根目录，执行：
+
+```sh
+sha256sum -c dnb-data.zip.sha256
+python3 tools/transfer_data.py unpack --archive "$DNB_ROOT/dnb-data.zip" --project-root "$DNB_ROOT"
+```
+
+数据恢复到 `data/legacy/`、`data/sources/` 和 `data/public_library/`，文件哈希及数据库表记录数会复核。目标 `data/` 必须为空或不存在。打包使用 SQLite 一致快照；不要直接拖动正在写入的数据库。源库中的历史路径仅用于追溯，读取器使用本机显式传入的路径。底座整个文件夹另传到 `models/qwen3-8b/`。
+
+确认 GPU 后，按 [PyTorch 官方说明](https://pytorch.org/get-started/locally/) 安装服务器驱动适配的运行环境，再安装 `.[research,text,quantized,io,plots]`。执行 `python -m rhythm_dnb hardware` 检查设备。下列 `corpus.json` 指已按当前契约审核、导出的语料，不是把 SQLite 改后缀；训练输出目录必须尚不存在。
 
 ```sh
 # 显式下载固定提交的权重、分词器，并生成哈希凭据
 python -m rhythm_dnb download-text --config configs/text/qwen.json \
-  --output-dir /models/qwen --cache-dir /cache/huggingface
+  --output-dir "$DNB_ROOT/models/qwen3-8b" --cache-dir "$DNB_ROOT/cache/huggingface"
 
 # 检查语料划分、权重哈希和实际 token 长度，不加载神经网络
-python -m rhythm_dnb check-text --corpus /data/corpus.json --base /models/qwen \
-  --config configs/text/qwen.json --output /runs/text-input-check.json
+python -m rhythm_dnb check-text --corpus "$DNB_ROOT/data/corpus.json" --base "$DNB_ROOT/models/qwen3-8b" \
+  --config configs/text/qwen.json --output "$DNB_ROOT/runs/text-input-check.json"
 
 # 单卡；训练、校准、测试均读取本地文件
 CUDA_VISIBLE_DEVICES=0 python -m rhythm_dnb train-text \
-  --corpus /data/corpus.json --base /models/qwen \
-  --config configs/text/qwen.json --output-dir /runs/text-training
+  --corpus "$DNB_ROOT/data/corpus.json" --base "$DNB_ROOT/models/qwen3-8b" \
+  --config configs/text/qwen.json --output-dir "$DNB_ROOT/runs/text-training"
 
 # 同一台服务器两卡：每卡一个进程
 CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
   --module rhythm_dnb train-text \
-  --corpus /data/corpus.json --base /models/qwen \
-  --config configs/text/qwen.json --output-dir /runs/text-multigpu
+  --corpus "$DNB_ROOT/data/corpus.json" --base "$DNB_ROOT/models/qwen3-8b" \
+  --config configs/text/qwen.json --output-dir "$DNB_ROOT/runs/text-multigpu"
 ```
 
 多卡使用 Linux/WSL NCCL；Windows 支持单卡。每张卡都装入底座，多卡显存不会合并。建议优先在 24 GB 卡上部署；8 GB 卡是否能运行须实测，不承诺仅靠 NF4 就能容纳全部状态。NF4 依赖 bitsandbytes 和 CUDA；CPU 实验需显式改为 `quantization=none` 并准备足够内存。
@@ -44,10 +60,10 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
 `execution.json` 记录设备和精度；`history.json` 记录每轮损失及更新；`model/` 保存适配器、评分头、分词器和文件哈希；`result.json` 与 `test-predictions.json` 保存测试结果（后者不含原文）。Qwen 推理必须同时提供原底座与适配器，不能随便换一个 `.pt/.pth` 文件。检查点不含完整优化器续训状态。
 
 ```sh
-python -m rhythm_dnb score-text --checkpoint /runs/text-training/model \
-  --base /models/qwen --category stress --text '实际待分析文本' --output /runs/score.json
-python -m rhythm_dnb plot-text --result /runs/text-training/result.json \
-  --predictions /runs/text-training/test-predictions.json --output-dir /runs/text-figures
+python -m rhythm_dnb score-text --checkpoint "$DNB_ROOT/runs/text-training/model" \
+  --base "$DNB_ROOT/models/qwen3-8b" --category stress --text '实际待分析文本' --output "$DNB_ROOT/runs/score.json"
+python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.json" \
+  --predictions "$DNB_ROOT/runs/text-training/test-predictions.json" --output-dir "$DNB_ROOT/runs/text-figures"
 ```
 
 图表显示各项误差、证据覆盖、评分波动幅度、误差相关和人工/模型散点。需要 `observed_at` 的同人重复标注才能评价个人变化；横断面成绩不能替代这一项。小模型测试只验证软件，真实训练和服务器多卡性能须另行报告。
@@ -67,15 +83,15 @@ python -m rhythm_dnb plot-text --result /runs/text-training/result.json \
 标签来自独立睡眠、饮食和活动观测，不能用文本预测值或 DNB 分数反过来造标签。各阶段按人隔离，真实输入字段见 [数据接入](data.md)。批量量化时通过 Python 接口复用同一个 `TextPredictor`，避免逐日重新加载底座。
 
 ```sh
-python -m rhythm_dnb develop --input /data/development.json \
-  --study configs/study.json --output-dir /runs/dnb-bundle > /runs/development-receipt.json
-BUNDLE_PATH=$(python -c "import json; print(json.load(open('/runs/development-receipt.json'))['bundle'])")
+python -m rhythm_dnb develop --input "$DNB_ROOT/data/development.json" \
+  --study configs/study.json --output-dir "$DNB_ROOT/runs/dnb-bundle" > "$DNB_ROOT/runs/development-receipt.json"
+BUNDLE_PATH=$(python -c "import json,os; print(json.load(open(os.path.join(os.environ['DNB_ROOT'],'runs/development-receipt.json')))['bundle'])")
 # EVALUATION_CUTOFF 是预先确定、带时区偏移的评价截止时间
 python -m rhythm_dnb validate --bundle "$BUNDLE_PATH" \
-  --cases /data/test-cases.json --events /data/test-events.json \
-  --monitoring /data/test-monitoring.json --as-of "$EVALUATION_CUTOFF" --output /runs/evaluation.json
+  --cases "$DNB_ROOT/data/test-cases.json" --events "$DNB_ROOT/data/test-events.json" \
+  --monitoring "$DNB_ROOT/data/test-monitoring.json" --as-of "$EVALUATION_CUTOFF" --output "$DNB_ROOT/runs/evaluation.json"
 python -m rhythm_dnb score --bundle "$BUNDLE_PATH" \
-  --request /data/today-request.json --state /runs/previous-score.json --output /runs/today-score.json
+  --request "$DNB_ROOT/data/today-request.json" --state "$DNB_ROOT/runs/previous-score.json" --output "$DNB_ROOT/runs/today-score.json"
 ```
 
 首次 `score` 省略 `--state`；以后直接传上次完整输出。`validate` 默认沿用冻结配置的重采样次数，显式 `--bootstrap` 可覆盖并会记录。拿到服务器后依次核对系统/驱动、GPU 型号与显存、数据路径，再用实际训练记录确定批量和长度。

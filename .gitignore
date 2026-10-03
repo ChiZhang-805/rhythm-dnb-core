@@ -22,6 +22,8 @@ bundles/
 runs/
 results/
 artifacts/
+cache/
+dnb-data.zip.sha256
 *.sqlite*
 *.db
 *.db-*
