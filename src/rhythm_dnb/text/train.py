@@ -5,6 +5,8 @@ import json
 import math
 from pathlib import Path
 import random
+import sys
+import time
 import numpy as np
 from ..provenance import canonical_json, fingerprint, file_hash
 from .corpus import prepare_corpus
@@ -42,7 +44,7 @@ def predict_rows(model, tokenizer, rows, config, device):
     return predictions
 
 
-def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_count):
+def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_count, *, learn_evidence=True):
     # PSEUDOCODE: accumulate exact global sample means -> synchronize final microbatch -> advance successful steps.
     import torch
     from .model import regression_loss
@@ -50,6 +52,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
     optimizer.zero_grad(set_to_none=True)
     loss_sum = count = 0.
     updates = skipped = 0
+    started = time.monotonic()
     accumulation = config['gradient_accumulation']
     width = config['batch_size'] * runtime.world_size
     for index, batch in enumerate(loader):
@@ -61,7 +64,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             with runtime.autocast():
                 outputs = model(**_inputs(batch, runtime.device))
                 losses = regression_loss(outputs, batch['labels'].to(runtime.device), batch['categories'],
-                                         config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'])
+                                         config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'] if learn_evidence else 0.)
                 weights = batch['sample_weights'].to(runtime.device)
                 weighted = (losses * weights).sum()
                 # DDP averages process gradients; undo it before dividing by the actual global sample count.
@@ -83,6 +86,10 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             else:
                 skipped += 1  # Overflow retries must not advance the learning-rate schedule.
             optimizer.zero_grad(set_to_none=True)
+            if runtime.rank == 0 and (updates + skipped) % 25 == 0:
+                print(canonical_json({'event': 'training_progress', 'microbatch': index + 1,
+                    'microbatches': len(loader), 'optimizer_steps': updates,
+                    'mean_loss_so_far': loss_sum / count, 'seconds': time.monotonic() - started}), file=sys.stderr, flush=True)
     total_loss, total_count = runtime.sum([loss_sum, count])
     if int(total_count) != sample_count:
         raise RuntimeError('Distributed epoch omitted or duplicated real training samples.')
@@ -90,7 +97,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             'optimizer_steps': updates, 'overflow_skipped_steps': skipped}
 
 
-def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False):
+def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False, experimental=False):
     # PSEUDOCODE: initialize shared inputs -> shard training -> select on validation -> test the chosen model once.
     import torch
     from torch.nn.parallel import DistributedDataParallel
@@ -98,7 +105,10 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     from transformers import get_linear_schedule_with_warmup
     from .model import ScoringModel
     from .runtime import ShardedBatches
-    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only})
+    if experimental and not development_only:
+        raise ValueError('Experimental runs must keep the sealed test set outside training.')
+    purpose = 'experimental_semantic_regression' if experimental else 'full_dataset_finetune'
+    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only, 'purpose': purpose})
     if len(set(runtime.gather(signature))) != 1:
         raise ValueError('Processes received different corpora, base files or training settings.')
     random.seed(config['seed'])
@@ -115,6 +125,8 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     execution = runtime.describe()
     runtime.primary(lambda: (output_path / 'execution.json').write_text(canonical_json(execution), encoding='utf-8'))
     core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
+    if experimental:
+        core.evidence_heads.requires_grad_(False)
     if config['gradient_checkpointing']:
         core.encoder.config.use_cache = False
         core.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
@@ -130,11 +142,12 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     baseline, median_reference = mean_baseline(partitions['train']), median_baseline(partitions['train'])
     best, stale, history, best_path = float('inf'), 0, [], None
     for epoch in range(config['epochs']):
+        epoch_started = time.monotonic()
         sampler = ShardedBatches(len(datasets['train']), config['batch_size'], runtime.rank, runtime.world_size, config['seed'], epoch)
         options = {'multiprocessing_context': 'spawn', 'persistent_workers': True} if config['num_workers'] else {}
         loader = DataLoader(datasets['train'], batch_sampler=sampler, collate_fn=Collator(tokenizer),
                             num_workers=config['num_workers'], pin_memory=runtime.device.type == 'cuda', **options)
-        progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']))
+        progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']), learn_evidence=not experimental)
         if not progress['optimizer_steps']:
             raise ValueError('Every optimizer step overflowed; no trained checkpoint can be selected.')
         validation = runtime.primary(lambda: report(partitions['validation'],
@@ -142,16 +155,19 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
         metric = validation['macro_category_mae']
         if not math.isfinite(metric):
             raise ValueError('Validation metric is not finite.')
-        history.append({'epoch': epoch + 1, **progress, 'validation': validation})
+        history.append({'epoch': epoch + 1, **progress, 'validation': validation, 'seconds': time.monotonic() - epoch_started})
         if metric < best:
             best, stale = metric, 0
             best_path = runtime.primary(lambda: str(save_checkpoint(output_path / f'epoch-{epoch + 1}', core, tokenizer, config,
                 {'run_id': output_path.name, 'dataset': corpus, 'base_id': base_id, 'execution': execution,
                  'mean_baseline': baseline, 'median_baseline': median_reference, 'epoch': epoch + 1,
-                 'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False})))
+                 'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False}, purpose=purpose)))
         else:
             stale += 1
         runtime.primary(lambda: (output_path / 'history.json').write_text(canonical_json(history), encoding='utf-8'))
+        if runtime.rank == 0:
+            print(canonical_json({'epoch': epoch + 1, 'validation_mae': metric, 'training_loss': progress['training_loss'],
+                                  'seconds': history[-1]['seconds'], 'best_checkpoint': best_path}), file=sys.stderr, flush=True)
         if stale >= config['patience']:
             break
     del loader, model, core, optimizer, scheduler, scaler
@@ -159,7 +175,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
         torch.cuda.empty_cache()
     if development_only:
         result = {'best_checkpoint': best_path, 'corpus': corpus, 'execution': execution, 'history': history,
-                  'validation_mae': best, 'test': None, 'status': 'development_only_uncalibrated'}
+                  'validation_mae': best, 'test': None, 'status': 'experimental_uncalibrated' if experimental else 'development_only_uncalibrated'}
         runtime.primary(lambda: (output_path / 'result.json').write_text(canonical_json(result), encoding='utf-8'))
         return result
 

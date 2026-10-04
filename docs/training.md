@@ -72,6 +72,8 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 ## 文本训练之后怎么走
 
+自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 固定导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选择轮次；锁定模型后才运行 `evaluate-text-experiment`。`score-text-experiment` 接收类别和中文文本，输出该类别的 0–100 分数。实验模型不训练证据头、不声称人工金标准或校准有效，也不能通过默认入口接入正式 DNB。所有原始来源和划分均保留。
+
 | 步骤 | 入口 | 做什么、保存什么 |
 | --- | --- | --- |
 | 训练文本模型 | `train-text` · `text/train.py` | 主要使用 GPU；从人工标注学习 17 项程度与证据，保存适配器、评分头及评价。 |

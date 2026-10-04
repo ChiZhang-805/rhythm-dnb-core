@@ -17,11 +17,12 @@ def device_for(name):
     return torch.device('cuda' if name != 'cpu' and torch.cuda.is_available() else 'cpu')
 
 
-def inspect_checkpoint(folder):
+def inspect_checkpoint(folder, *, allow_experimental=False):
     # PSEUDOCODE: validate completed semantic contract and every pinned file, including adapter and head weights.
     folder = Path(folder).resolve()
     manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
-    if manifest.get('contract') != schema() or manifest.get('status') != 'complete' or manifest.get('purpose') != 'full_dataset_finetune':
+    purposes = ('full_dataset_finetune', 'experimental_semantic_regression') if allow_experimental else ('full_dataset_finetune',)
+    if manifest.get('contract') != schema() or manifest.get('status') != 'complete' or manifest.get('purpose') not in purposes:
         raise ValueError('Checkpoint is incomplete or has a different semantic contract.')
     files = manifest.get('files', {})
     actual = {p.relative_to(folder).as_posix() for p in folder.rglob('*') if p.is_file() and p != folder / 'manifest.json'}
@@ -53,13 +54,13 @@ def load_tokenizer(folder):
     return tokenizer
 
 
-def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None):
+def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None, allow_experimental=False):
     # PSEUDOCODE: verify checkpoint/base -> restore small adapters or full comparator -> load tokenizer.
     import torch
     from safetensors.torch import load_file
     from .model import ScoringModel
     folder = Path(folder)
-    manifest, identity = inspect_checkpoint(folder)
+    manifest, identity = inspect_checkpoint(folder, allow_experimental=allow_experimental)
     target = device_for(device) if isinstance(device, str) else device
     if manifest['storage'] == 'adapter':
         from peft import PeftModel
@@ -83,9 +84,11 @@ def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None):
     return model, tokenizer, manifest, identity
 
 
-def save_checkpoint(folder, model, tokenizer, config, metadata):
+def save_checkpoint(folder, model, tokenizer, config, metadata, *, purpose='full_dataset_finetune'):
     # PSEUDOCODE: reserve directory -> save adapters/heads or comparator -> publish complete checksum manifest last.
     from safetensors.torch import save_file
+    if purpose not in ('full_dataset_finetune', 'experimental_semantic_regression'):
+        raise ValueError('Unknown checkpoint purpose.')
     folder = Path(folder); folder.mkdir(parents=True, exist_ok=False)
     adapter = hasattr(model.encoder, 'peft_config')
     if adapter:
@@ -95,7 +98,7 @@ def save_checkpoint(folder, model, tokenizer, config, metadata):
     model.encoder.config.save_pretrained(folder / 'encoder')
     tokenizer.save_pretrained(folder / 'tokenizer')
     files = {p.relative_to(folder).as_posix(): file_hash(p) for p in folder.rglob('*') if p.is_file()}
-    manifest = {**metadata, 'purpose': 'full_dataset_finetune', 'status': 'complete',
+    manifest = {**metadata, 'purpose': purpose, 'status': 'complete',
                 'storage': 'adapter' if adapter else 'full', 'contract': schema(), 'config': config, 'files': files}
     (folder / 'manifest.json').write_text(canonical_json(manifest), encoding='utf-8')
     return folder

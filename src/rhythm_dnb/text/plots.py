@@ -1,4 +1,4 @@
-"""Plot held-out text errors, evidence coverage, dispersion and paired human/model scores."""
+"""Plot held-out text errors, evidence coverage, dispersion and paired reference/model scores."""
 
 from pathlib import Path
 import numpy as np
@@ -15,8 +15,11 @@ def plot_evaluation(result, predictions, directory):
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=False)
     labels = [key.replace('_', ' ') for key in keys]
     figure, axes = plt.subplots(1, 3, figsize=(17, max(6, len(keys) * .4)), layout='constrained', sharey=True)
-    for axis, field, title in zip(axes, ('mae', 'coverage', 'sd_ratio'), ('Absolute error (0–100 scale)', 'Evidence acceptance fraction', 'Prediction SD / human SD')):
-        values = [report['evidence'][k][field] if field == 'coverage' else report['per_metric'][k][field] for k in keys]
+    experimental = result.get('purpose') == 'experimental_semantic_regression'
+    middle = ('baseline_mae', 'Training-mean baseline error') if experimental else ('coverage', 'Evidence acceptance fraction')
+    for axis, field, title in zip(axes, ('mae', middle[0], 'sd_ratio'), ('Absolute error (0–100 scale)', middle[1], 'Prediction SD / reference SD')):
+        source = report['evidence'] if field == 'coverage' else report['mean_baseline'] if field == 'baseline_mae' else report['per_metric']
+        values = [source[k]['mae' if field == 'baseline_mae' else field] for k in keys]
         axis.barh(labels, [np.nan if v is None else v for v in values])
         axis.set_title(title); axis.grid(axis='x', alpha=.2)
         if field == 'coverage':
@@ -47,9 +50,9 @@ def plot_evaluation(result, predictions, directory):
                 x, y = np.asarray(pairs, dtype=float).T
                 axis.scatter(x, y, s=10, alpha=.4)
             axis.plot([0, 100], [0, 100], '--', color='black', linewidth=1)
-            axis.set(xlim=(0, 100), ylim=(0, 100), xlabel='Human score', ylabel='Model estimate', title=key.replace('_', ' '))
+            axis.set(xlim=(0, 100), ylim=(0, 100), xlabel='Reference score', ylabel='Model estimate', title=key.replace('_', ' '))
         for axis in list(axes.flat)[len(keys[page:page + 6]):]:
             axis.set_visible(False)
-        figure.suptitle('Known held-out labels; raw estimates shown before evidence rejection')
+        figure.suptitle('Experimental held-out reference scores' if experimental else 'Known held-out labels; raw estimates shown before evidence rejection')
         outputs.append(_save(figure, directory / f'paired-scores-{page // 6 + 1}'))
     return {'figures': outputs}

@@ -73,6 +73,20 @@ def main(argv=None):
     text = sub.add_parser('score-text'); text.add_argument('--checkpoint', required=True); text.add_argument('--category', required=True); text.add_argument('--text', required=True); text.add_argument('--output', required=True)
     text.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
     text.add_argument('--base', help='Exact local base weights required for Qwen adapters')
+    export_experiment = sub.add_parser('export-text-experiment', help='Freeze authored/model-scored references without relabeling their origin')
+    export_experiment.add_argument('--database', required=True); export_experiment.add_argument('--output-dir', required=True)
+    train_experiment = sub.add_parser('train-text-experiment', help='Train only on the experimental development partition')
+    train_experiment.add_argument('--corpus', required=True); train_experiment.add_argument('--base', required=True)
+    train_experiment.add_argument('--config', required=True); train_experiment.add_argument('--output-dir', required=True)
+    evaluate_experiment = sub.add_parser('evaluate-text-experiment', help='Evaluate a chosen experimental model on its sealed test set')
+    evaluate_experiment.add_argument('--corpus', required=True); evaluate_experiment.add_argument('--base', required=True)
+    evaluate_experiment.add_argument('--checkpoint', required=True); evaluate_experiment.add_argument('--output-dir', required=True)
+    evaluate_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
+    score_experiment = sub.add_parser('score-text-experiment', help='Return experimental reference estimates; not a calibrated DNB input')
+    score_experiment.add_argument('--checkpoint', required=True); score_experiment.add_argument('--base', required=True)
+    score_experiment.add_argument('--category', required=True); score_experiment.add_argument('--text', required=True)
+    score_experiment.add_argument('--output', required=True)
+    score_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
     args = parser.parse_args(argv)
     if args.command == 'hardware':
         from .text.runtime import hardware_report
@@ -167,5 +181,21 @@ def main(argv=None):
     elif args.command == 'score-text':
         from .text.predict import TextPredictor
         result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base).predict(args.category, args.text)
+    elif args.command == 'export-text-experiment':
+        from .text.experiment import export_corpus
+        print(canonical_json(export_corpus(args.database, args.output_dir))); return 0
+    elif args.command == 'train-text-experiment':
+        from .text.experiment import train_experiment as fit_experiment
+        result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config))
+        if int(os.environ.get('RANK', '0')) == 0:
+            print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_mae': result['validation_mae']}))
+        return 0
+    elif args.command == 'evaluate-text-experiment':
+        from .text.experiment import evaluate_experiment as evaluate_text
+        result = evaluate_text(_read(args.corpus), args.checkpoint, args.base, args.output_dir, device=args.device)
+        print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']})); return 0
+    elif args.command == 'score-text-experiment':
+        from .text.predict import TextPredictor
+        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True).predict(args.category, args.text)
     save_report(result, args.output)
     print(canonical_json({'output': args.output})); return 0
