@@ -34,6 +34,38 @@ MENTIONS = {
     'social_burden_intensity': r'负担|压力|累|疲|勉强|应付|消耗|耗费',
 }
 
+# Ambiguous absence/normal-state references need review. Mask them rather than assigning a guessed zero.
+REVIEW_CUES = {
+    'appetite_loss_intensity': r'(?:食欲|胃口)(?:正常|不错|很好|好|旺盛|偏强)|不(?:缺乏食欲|想少吃)|没有(?:食欲下降|胃口不好)',
+    'excess_intake_intensity': r'(?:不|没|没有)(?:觉得)?(?:吃撑|过量|吃多|吃太多)|没有过饱',
+    'meal_irregularity_intensity': r'(?:饭点|餐点|三餐|进餐|饮食)(?:很|比较|非常)?(?:规律|固定)|按时吃|没有漏餐',
+    'sleep_onset_difficulty': r'很快睡着|入睡(?:很快|容易|顺利)|(?:不|没有)(?:难以入睡|入睡困难)|没(?:有)?睡不着',
+    'sleep_disruption_intensity': r'一觉到|睡到天亮|(?:没|没有)(?:夜醒|醒过|中断)|(?:不|没有)(?:反复醒|中途醒)',
+    'post_sleep_fatigue': r'(?:不|没有|没)(?:感到|觉得)?(?:疲劳|疲倦|累)|(?:醒后|起床后|早上).{0,8}(?:精神很好|精神足|精力充沛)',
+    'loneliness_intensity': r'(?:不|没有|没)(?:觉得|感到)?(?:孤独|寂寞)|无孤独',
+    'social_burden_intensity': r'(?:不|没有|没)(?:觉得|感到|明显)?(?:社交疲劳|社交负担|负担|累)|不需(?:要)?应付',
+    'sadness_intensity': r'(?:不|没有|没)(?:觉得|感到)?(?:悲伤|难过)|无悲伤',
+    'anxiety_intensity': r'(?:不|没有|没)(?:觉得|感到)?(?:焦虑|紧张|担心)|无焦虑',
+    'irritability_intensity': r'(?:不|没有|没)(?:觉得|感到|明显)?(?:烦躁|生气|烦)|无烦躁',
+    'joy_intensity': r'(?:不|没有|没)(?:觉得|感到)?(?:开心|高兴|快乐)|开心不起来',
+}
+
+
+def screen_weak_absence(rows):
+    # PSEUDOCODE: quarantine questionable weak references in-place on copies; keep curated context examples intact.
+    kept, changes = [], []
+    for original in rows:
+        row = {**original, 'scores': dict(original['scores'])}
+        if row.get('reference_method') == 'manual_contextual_rewrite_with_mention_filter':
+            for key, value in list(row['scores'].items()):
+                if value is not None and key in REVIEW_CUES and re.search(REVIEW_CUES[key], row['text']):
+                    row['scores'][key] = None
+                    changes.append({'example_id': row['example_id'], 'metric': key, 'previous_reference': value,
+                                    'reason': 'absence_or_normal_state_requires_independent_reference_review'})
+        if any(v is not None for v in row['scores'].values()):
+            kept.append(row)
+    return kept, changes
+
 
 def text_identity(text):
     # PSEUDOCODE: ignore whitespace/punctuation but retain wording, numbers and negation.
@@ -144,6 +176,7 @@ def export_expansion(database, legacy_development, legacy_test, checkpoint, outp
                 'category': item['category'], 'text': item['text'], 'annotation_source': REFERENCE,
                 'scores': {k: item['scores'].get(k) for k in CATEGORIES[item['category']][1]},
                 'phenomenon': item['phenomenon'], 'reference_method': 'assistant_authored_semantic_reference'})
+    accepted, reference_review = screen_weak_absence(accepted)
     categories = {'train': list(CATEGORIES), 'validation': list(FORMAL_CATEGORIES), 'test': list(FORMAL_CATEGORIES)}
     accepted, partitions = validate_rows(accepted, ('train', 'validation', 'test'), categories=categories, allow_missing=True)
     for role in ('validation', 'test'):
@@ -162,9 +195,10 @@ def export_expansion(database, legacy_development, legacy_test, checkpoint, outp
         'evidence_calibration': None, 'seed': seed, 'holdout_fraction_per_source': .1,
         'known_limitations': ['authored_weak_references', 'lexical_mention_is_not_semantic_verification',
                              'semantic_paraphrase_duplicates_not_exhaustively_excluded', 'no_new_stress_holdout'],
-        'mention_patterns': MENTIONS}
+        'mention_patterns': MENTIONS, 'reference_review_cues': REVIEW_CUES}
     manifest.update(supplement_id=fingerprint(supplemental), supplement_texts=len(supplemental))
     audit = {'source_records': len(observations), 'source_texts': len(source_snapshot),
+        'reference_review': reference_review,
         'source_snapshot_id': manifest['source_snapshot_id'], 'masked_targets': dict(masked),
         'excluded_reasons': dict(Counter(reason for _, reason in rejected)), 'excluded_rows': rejected,
         'partitions': {role: {'texts': len(items), 'people': len({r['participant_id'] for r in items if r.get('participant_id')}),
@@ -176,4 +210,29 @@ def export_expansion(database, legacy_development, legacy_test, checkpoint, outp
         (output / (name + '.json')).write_text(canonical_json({'manifest': manifest, 'rows': items}), encoding='utf-8')
     (output / 'manifest.json').write_text(canonical_json(manifest), encoding='utf-8')
     (output / 'audit.json').write_text(canonical_json(audit), encoding='utf-8')
-    return {**manifest, 'audit_summary': {k: v for k,v in audit.items() if k != 'excluded_rows'}}
+    return {**manifest, 'audit_summary': {k: v for k,v in audit.items() if k not in ('excluded_rows','reference_review')}}
+
+
+def refine_frozen_corpus(directory, output_dir):
+    # PSEUDOCODE: apply label review to an immutable export, preserving roles and never consulting model test errors.
+    directory, output = Path(directory), Path(output_dir)
+    dev = json.loads((directory/'development.json').read_text(encoding='utf-8'))
+    test = json.loads((directory/'test.json').read_text(encoding='utf-8'))
+    manifest = dev['manifest']
+    if test['manifest'] != manifest or fingerprint(test['rows']) != manifest['test_id']:
+        raise ValueError('Frozen partitions disagree.')
+    from .experiment import prepare_development
+    prepare_development(dev)
+    rows, changes = screen_weak_absence(dev['rows'] + test['rows'])
+    rows, partitions = validate_rows(rows, ('train','validation','test'),categories=manifest['categories'],allow_missing=True)
+    development = partitions['train'] + partitions['validation']
+    refined = {**manifest, 'id': fingerprint(rows), 'development_id': fingerprint(development),
+               'test_id': fingerprint(partitions['test']), 'counts': {k:len(v) for k,v in partitions.items()},
+               'parent_export_id': manifest['id'], 'reference_review_cues': REVIEW_CUES}
+    output.mkdir(parents=True,exist_ok=False)
+    for name, items in [('development',development),('test',partitions['test'])]:
+        (output/(name+'.json')).write_text(canonical_json({'manifest':refined,'rows':items}),encoding='utf-8')
+    (output/'manifest.json').write_text(canonical_json(refined),encoding='utf-8')
+    (output/'reference-review.json').write_text(canonical_json({'parent_export':manifest['id'], 'changes':changes,
+        'changed_labels':len(changes),'removed_texts':len(dev['rows'])+len(test['rows'])-len(rows)}),encoding='utf-8')
+    return {'counts':refined['counts'],'changed_labels':len(changes),'id':refined['id']}

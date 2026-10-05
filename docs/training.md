@@ -78,6 +78,8 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 扩充节律文字用 `expand-text-experiment --database 节律库 --legacy-development 旧development.json --legacy-test 旧test.json --checkpoint 旧模型 --output-dir 新语料目录`，可加 `--supplement 复杂场景.jsonl`。按人及来源分层留出新验证/测试，去除相同文本的冲突评分和数字替换模板；没有明确指标线索的参考分数保留未知，不自动造分。关键词筛选仅是保守的数据过滤，不能证明语义标注正确。原库不修改，排除原因、来源和过滤规则留在导出审计中。
 
+大库中的“没有孤独感”等否定或正常状态描述存在冲突参考分数，相关目标也先屏蔽，不能自动改成猜测的零分。旧冻结导出可用 `review-text-experiment --corpus-dir 旧导出 --output-dir 新导出` 应用同一筛查，保留原评分和原因。经单独编写核对的复杂场景保留自己的参考标注；这些仍是实验语义参考，不是独立人工金标准。
+
 新数据继续微调用 `train-text-experiment ... --initialize-from 旧模型 --save-resume-state`：继承适配器和评分头，重新建立优化器；`--resume-state` 则仅用于同一实验中断恢复。保留初始模型参与验证比较，续训变差时不强行替换。类别平衡通过配置 `balance_categories` 控制，使压力等小类仍能参与学习。新四类测试不用于声称压力能力提高。
 
 模型读取完整文字；悲伤词并不直接决定分数。参考 [CheckList](https://aclanthology.org/2020.acl-main.442/) 和[对照样本测试](https://aclanthology.org/2020.findings-emnlp.117/)，分别检查否定、转折、当前/过去、自己/他人、反话和隐含表达。自编场景分数属于实验参考；训练场景与最终行为检查用不同文本，不把这些检查的通过率称作真实人群准确率。信息不足的反话不能仅靠几个词确定含义；[iSarcasmEval](https://aclanthology.org/2022.semeval-1.111/)专门区分作者意图与外部判断。

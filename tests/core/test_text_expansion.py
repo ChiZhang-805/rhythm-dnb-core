@@ -10,7 +10,7 @@ from contextlib import closing
 
 from rhythm_dnb.provenance import fingerprint
 from rhythm_dnb.text.experiment import prepare_development, train_experiment
-from rhythm_dnb.text.expansion import person_roles, template_identity, text_identity, MENTIONS, export_expansion
+from rhythm_dnb.text.expansion import person_roles, template_identity, text_identity, MENTIONS, export_expansion, screen_weak_absence
 from rhythm_dnb.text.schema import CATEGORIES, FORMAL_CATEGORIES
 from rhythm_dnb.text.checkpoint import inspect_checkpoint, load_checkpoint
 from core.test_text_experiment import experimental_fixture
@@ -27,7 +27,7 @@ class TextExpansionTests(unittest.TestCase):
             database = root / 'rhythm.sqlite'
             columns = [k for c in FORMAL_CATEGORIES for k in CATEGORIES[c][1]]
             texts = {'emotion': '心情开心但有些悲伤焦虑烦躁', 'social': '愿意交流满意但有孤独和负担',
-                     'diet': '胃口不错没有吃撑饭点规律', 'sleep': '昨晚很快睡着一觉到天亮醒后精神好睡眠质量好'}
+                     'diet': '胃口很差经常吃撑饭点不规律', 'sleep': '昨晚很快睡着一觉到天亮醒后精神好睡眠质量好'}
             with closing(sqlite3.connect(database)) as db:
                 db.execute('CREATE TABLE observations(record_id TEXT,participant_id TEXT,source_dataset TEXT,' +
                            ','.join('text_' + k + ' REAL' for k in columns) + ')')
@@ -66,6 +66,19 @@ class TextExpansionTests(unittest.TestCase):
         roles = person_roles(rows, 42)
         self.assertEqual(roles, person_roles(rows + [{'participant_id': 'p0', 'source_dataset': 'DelSoM-treatment'}], 42))
         self.assertEqual(set(roles.values()), {'train', 'validation', 'test'})
+
+    def test_absence_screen_never_guesses_a_replacement_score(self):
+        row = {'example_id':'a','text':'我不觉得孤独，还是愿意见朋友。',
+               'scores':{'loneliness_intensity':36.,'social_willingness':80.},
+               'reference_method':'manual_contextual_rewrite_with_mention_filter'}
+        kept,changes = screen_weak_absence([row])
+        self.assertIsNone(kept[0]['scores']['loneliness_intensity'])
+        self.assertEqual(row['scores']['loneliness_intensity'],36.)
+        self.assertEqual(changes[0]['previous_reference'],36.)
+        curated={**row,'reference_method':'assistant_authored_semantic_reference'}
+        self.assertEqual(screen_weak_absence([curated])[1],[])
+        unrelated={**row,'text':'今天没有午睡；食欲下降很明显。','scores':{'appetite_loss_intensity':75.}}
+        self.assertEqual(screen_weak_absence([unrelated])[1],[])
 
     def test_new_stage_keeps_weights_trainable_and_rejects_old_validation(self):
         import torch

@@ -82,6 +82,8 @@ def main(argv=None):
     expand.add_argument('--legacy-test', required=True); expand.add_argument('--checkpoint', required=True)
     expand.add_argument('--output-dir', required=True); expand.add_argument('--seed', type=int, default=20261006)
     expand.add_argument('--supplement', help='Reviewed authored complex training examples in JSON Lines format')
+    review = sub.add_parser('review-text-experiment', help='Screen doubtful weak references in an existing frozen export')
+    review.add_argument('--corpus-dir', required=True); review.add_argument('--output-dir', required=True)
     train_experiment = sub.add_parser('train-text-experiment', help='Train only on the experimental development partition')
     train_experiment.add_argument('--corpus', required=True); train_experiment.add_argument('--base', required=True)
     train_experiment.add_argument('--config', required=True); train_experiment.add_argument('--output-dir', required=True)
@@ -200,6 +202,9 @@ def main(argv=None):
         result = export_expansion(args.database, args.legacy_development, args.legacy_test, args.checkpoint,
                                   args.output_dir, seed=args.seed, supplement=args.supplement)
         print(canonical_json({'counts': result['counts'], 'output_dir': args.output_dir})); return 0
+    elif args.command == 'review-text-experiment':
+        from .text.expansion import refine_frozen_corpus
+        print(canonical_json(refine_frozen_corpus(args.corpus_dir,args.output_dir))); return 0
     elif args.command == 'train-text-experiment':
         from .text.experiment import train_experiment as fit_experiment
         result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config),
