@@ -74,5 +74,6 @@ process_timeout_minutes,120,text/config.py,多卡通信等待,为主进程验证
 adam_beta1,0.9,text/config.py,优化器一阶动量,显式记录AdamW标准起点避免随库默认值变化,先固定；仅在开发组比较并记录梯度行为,validation_search,https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 adam_beta2,0.999,text/config.py,优化器二阶动量,与QLoRA原7B实验一致的起点；并非本任务最优证明,仅在开发组比较0.95或0.999,validation_search,https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 adam_epsilon,1e-8,text/config.py,优化器数值保护,AdamW标准分母保护；与DNB epsilon作用不同,检查非有限梯度和溢出；不要据测试成绩调整,validation_search,https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
+balance_categories,false,text/config.py,类别损失平衡,启用后各类每轮总权重相等；不重复制造样本,扩充四类文字时防止小类压力被淹没；按验证比较,validation_search,训练目标设计；不保证最优
 maximum_text_characters,10000,text/schema.py,输入资源保护,应用输入上限；真正模型上限由token计数决定,根据服务容量调整；不静默截断,hardware,接口保护约定；不代表预测性能参数
 kernel_min_samples,9,dnb/single_sample.py,底层兼容门槛,低层数值接口历史保护；正式参考仍至少100人,不能用该低层门槛绕过研究级人数要求,hardware,接口保护约定；不代表预测性能参数

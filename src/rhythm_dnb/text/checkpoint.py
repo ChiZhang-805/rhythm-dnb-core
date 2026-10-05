@@ -54,7 +54,7 @@ def load_tokenizer(folder):
     return tokenizer
 
 
-def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None, allow_experimental=False):
+def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None, allow_experimental=False, trainable=False):
     # PSEUDOCODE: verify checkpoint/base -> restore small adapters or full comparator -> load tokenizer.
     import torch
     from safetensors.torch import load_file
@@ -70,7 +70,7 @@ def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None, allow_e
             dtype = (torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16) if target.type == 'cuda' else torch.float32
         model = ScoringModel.pretrained(base_path, manifest['config']['dropout'], config=manifest['config'],
                                         device=target, dtype=dtype, training=False)
-        model.encoder = PeftModel.from_pretrained(model.encoder, folder / 'adapter', is_trainable=False, local_files_only=True)
+        model.encoder = PeftModel.from_pretrained(model.encoder, folder / 'adapter', is_trainable=trainable, local_files_only=True)
         heads = load_file(str(folder / 'model.safetensors'))
         expected = {k for k in model.state_dict() if not k.startswith('encoder.')}
         if set(heads) != expected:

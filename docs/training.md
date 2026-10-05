@@ -76,6 +76,12 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 固定导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选择轮次；锁定模型后才运行 `evaluate-text-experiment`。`score-text-experiment` 接收类别和中文文本，输出该类别的 0–100 分数。实验模型不训练证据头、不声称人工金标准或校准有效，也不能通过默认入口接入正式 DNB。所有原始来源和划分均保留。
 
+扩充节律文字用 `expand-text-experiment --database 节律库 --legacy-development 旧development.json --legacy-test 旧test.json --checkpoint 旧模型 --output-dir 新语料目录`，可加 `--supplement 复杂场景.jsonl`。按人及来源分层留出新验证/测试，去除相同文本的冲突评分和数字替换模板；没有明确指标线索的参考分数保留未知，不自动造分。关键词筛选仅是保守的数据过滤，不能证明语义标注正确。原库不修改，排除原因、来源和过滤规则留在导出审计中。
+
+新数据继续微调用 `train-text-experiment ... --initialize-from 旧模型 --save-resume-state`：继承适配器和评分头，重新建立优化器；`--resume-state` 则仅用于同一实验中断恢复。保留初始模型参与验证比较，续训变差时不强行替换。类别平衡通过配置 `balance_categories` 控制，使压力等小类仍能参与学习。新四类测试不用于声称压力能力提高。
+
+模型读取完整文字；悲伤词并不直接决定分数。参考 [CheckList](https://aclanthology.org/2020.acl-main.442/) 和[对照样本测试](https://aclanthology.org/2020.findings-emnlp.117/)，分别检查否定、转折、当前/过去、自己/他人、反话和隐含表达。自编场景分数属于实验参考；训练场景与最终行为检查用不同文本，不把这些检查的通过率称作真实人群准确率。信息不足的反话不能仅靠几个词确定含义；[iSarcasmEval](https://aclanthology.org/2022.semeval-1.111/)专门区分作者意图与外部判断。
+
 | 步骤 | 入口 | 做什么、保存什么 |
 | --- | --- | --- |
 | 训练文本模型 | `train-text` · `text/train.py` | 主要使用 GPU；从人工标注学习 17 项程度与证据，保存适配器、评分头及评价。 |

@@ -77,11 +77,17 @@ def main(argv=None):
     text.add_argument('--base', help='Exact local base weights required for Qwen adapters')
     export_experiment = sub.add_parser('export-text-experiment', help='Freeze authored/model-scored references without relabeling their origin')
     export_experiment.add_argument('--database', required=True); export_experiment.add_argument('--output-dir', required=True)
+    expand = sub.add_parser('expand-text-experiment', help='Freeze rhythm narratives and new participant holdouts for continuation')
+    expand.add_argument('--database', required=True); expand.add_argument('--legacy-development', required=True)
+    expand.add_argument('--legacy-test', required=True); expand.add_argument('--checkpoint', required=True)
+    expand.add_argument('--output-dir', required=True); expand.add_argument('--seed', type=int, default=20261006)
+    expand.add_argument('--supplement', help='Reviewed authored complex training examples in JSON Lines format')
     train_experiment = sub.add_parser('train-text-experiment', help='Train only on the experimental development partition')
     train_experiment.add_argument('--corpus', required=True); train_experiment.add_argument('--base', required=True)
     train_experiment.add_argument('--config', required=True); train_experiment.add_argument('--output-dir', required=True)
     train_experiment.add_argument('--save-resume-state', action='store_true')
     train_experiment.add_argument('--resume-state')
+    train_experiment.add_argument('--initialize-from', help='Start a new data stage from an experimental checkpoint')
     evaluate_experiment = sub.add_parser('evaluate-text-experiment', help='Evaluate a chosen experimental model on its sealed test set')
     evaluate_experiment.add_argument('--corpus', required=True); evaluate_experiment.add_argument('--base', required=True)
     evaluate_experiment.add_argument('--checkpoint', required=True); evaluate_experiment.add_argument('--output-dir', required=True)
@@ -189,10 +195,16 @@ def main(argv=None):
     elif args.command == 'export-text-experiment':
         from .text.experiment import export_corpus
         print(canonical_json(export_corpus(args.database, args.output_dir))); return 0
+    elif args.command == 'expand-text-experiment':
+        from .text.expansion import export_expansion
+        result = export_expansion(args.database, args.legacy_development, args.legacy_test, args.checkpoint,
+                                  args.output_dir, seed=args.seed, supplement=args.supplement)
+        print(canonical_json({'counts': result['counts'], 'output_dir': args.output_dir})); return 0
     elif args.command == 'train-text-experiment':
         from .text.experiment import train_experiment as fit_experiment
         result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config),
-                                save_resume_state=args.save_resume_state, resume_state=args.resume_state)
+                                save_resume_state=args.save_resume_state, resume_state=args.resume_state,
+                                initialize_from=args.initialize_from)
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_mae': result['validation_mae']}))
         return 0

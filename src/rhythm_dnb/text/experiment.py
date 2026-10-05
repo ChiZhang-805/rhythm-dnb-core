@@ -16,7 +16,7 @@ REFERENCE = 'model_semantic_reference_not_independent_human_gold'
 ORIGINS = {'authored_simulation', 'translated_source', 'observed', 'translated_observed'}
 
 
-def validate_rows(rows, roles):
+def validate_rows(rows, roles, *, categories=None, allow_missing=False):
     # PSEUDOCODE: keep source identities and labels -> reject malformed rows and cross-role leakage.
     rows = [dict(row) for row in rows]
     ids, texts = set(), {}
@@ -33,8 +33,9 @@ def validate_rows(rows, roles):
             raise ValueError('Experimental reference provenance must remain explicit.')
         scores = row.get('scores')
         if not isinstance(scores, dict) or set(scores) != set(CATEGORIES[category][1]) or any(
-                type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100
-                for value in scores.values()):
+                not (allow_missing and value is None) and
+                (type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100)
+                for value in scores.values()) or not any(value is not None for value in scores.values()):
             raise ValueError('Experiment needs complete, finite category references on the 0-100 scale.')
         key = fingerprint(''.join(text.split()))
         if key in texts and texts[key] != row['split']:
@@ -43,8 +44,9 @@ def validate_rows(rows, roles):
     validate_splits(rows, group_keys=('group_id', 'source_record_id', 'participant_id'))
     rows.sort(key=lambda row: row['example_id'])
     partitions = {role: [row for row in rows if row['split'] == role] for role in roles}
-    if any({row['category'] for row in items} != set(CATEGORIES) for items in partitions.values()):
-        raise ValueError('Every experimental partition must contain all five categories.')
+    if any({row['category'] for row in items} != set((categories or {}).get(role, CATEGORIES))
+           for role, items in partitions.items()):
+        raise ValueError('Experimental partition does not match its declared category coverage.')
     return rows, partitions
 
 
@@ -81,7 +83,8 @@ def export_corpus(database, output_dir):
 
 def prepare_development(payload):
     # PSEUDOCODE: accept only sealed train/validation rows; never load test labels in the training process.
-    rows, partitions = validate_rows(payload['rows'], ('train', 'validation'))
+    rows, partitions = validate_rows(payload['rows'], ('train', 'validation'),
+        categories=payload['manifest'].get('categories'), allow_missing=payload['manifest'].get('allow_missing', False))
     ordered = partitions['train'] + partitions['validation']
     manifest = payload['manifest']
     if manifest.get('purpose') != PURPOSE or manifest.get('reference') != REFERENCE or fingerprint(ordered) != manifest.get('development_id'):
@@ -93,7 +96,7 @@ def prepare_development(payload):
                         'development_text_hashes': sorted({fingerprint(''.join(row['text'].split())) for row in rows})}
 
 
-def train_experiment(payload, base_path, output_dir, config, *, save_resume_state=False, resume_state=None):
+def train_experiment(payload, base_path, output_dir, config, *, save_resume_state=False, resume_state=None, initialize_from=None):
     # PSEUDOCODE: verify the experimental snapshot and base -> share the normal optimizer -> select by validation only.
     from .config import validate_config
     from .weights import check_base
@@ -105,20 +108,24 @@ def train_experiment(payload, base_path, output_dir, config, *, save_resume_stat
     identity = check_base(base, config)
     with TrainingRuntime(config) as runtime:
         return _train(partitions, manifest, base, identity, Path(output_dir).resolve(), config, runtime,
-                      development_only=True, experimental=True, save_resume_state=save_resume_state, resume_state=resume_state)
+                      development_only=True, experimental=True, save_resume_state=save_resume_state,
+                      resume_state=resume_state, initialize_from=initialize_from)
 
 
 def validate_holdout(payload, manifest):
     # PSEUDOCODE: match the sealed test snapshot and reject identities/text that appeared during development.
-    rows, _ = validate_rows(payload['rows'], ('test',))
     corpus = manifest['dataset']
+    rows, _ = validate_rows(payload['rows'], ('test',), categories=corpus.get('categories'),
+                            allow_missing=corpus.get('allow_missing', False))
     if (payload['manifest'].get('id') != corpus['id'] or payload['manifest'].get('purpose') != PURPOSE
             or fingerprint(rows) != corpus['test_id'] or len(rows) != corpus['counts']['test']):
         raise ValueError('Test corpus differs from the precommitted held-out snapshot.')
+    ancestor = manifest.get('initialization') or {}
     for key, values in corpus['development_groups'].items():
+        values = set(values) | set(ancestor.get('exposure_groups', {}).get(key, []))
         if set(values) & {row[key] for row in rows if row.get(key)}:
             raise ValueError('Test identity overlaps development: ' + key)
-    if set(corpus['development_text_hashes']) & {fingerprint(''.join(row['text'].split())) for row in rows}:
+    if (set(corpus['development_text_hashes']) | set(ancestor.get('exposure_text_hashes', []))) & {fingerprint(''.join(row['text'].split())) for row in rows}:
         raise ValueError('Test text overlaps development.')
     return rows
 

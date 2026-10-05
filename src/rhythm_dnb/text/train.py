@@ -44,7 +44,7 @@ def predict_rows(model, tokenizer, rows, config, device):
     return predictions
 
 
-def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_count, *, learn_evidence=True):
+def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_count, *, learn_evidence=True, category_weights=None):
     # PSEUDOCODE: accumulate exact global sample means -> synchronize final microbatch -> advance successful steps.
     import torch
     from .model import regression_loss
@@ -66,6 +66,8 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
                 losses = regression_loss(outputs, batch['labels'].to(runtime.device), batch['categories'],
                                          config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'] if learn_evidence else 0.)
                 weights = batch['sample_weights'].to(runtime.device)
+                if category_weights:
+                    losses = losses * losses.new_tensor([category_weights[c] for c in batch['categories']])
                 weighted = (losses * weights).sum()
                 # DDP averages process gradients; undo it before dividing by the actual global sample count.
                 loss = weighted * runtime.world_size / global_samples
@@ -98,7 +100,7 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
 
 
 def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False, experimental=False,
-           save_resume_state=False, resume_state=None):
+           save_resume_state=False, resume_state=None, initialize_from=None):
     # PSEUDOCODE: initialize shared inputs -> shard training -> select on validation -> test the chosen model once.
     import torch
     from torch.nn.parallel import DistributedDataParallel
@@ -107,10 +109,13 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     from .model import ScoringModel
     from .runtime import ShardedBatches
     from .resume import carry_best_checkpoint, implementation_identity, read_state, restore_state, save_state
+    from .continuation import validate_initialization
     if experimental and not development_only:
         raise ValueError('Experimental runs must keep the sealed test set outside training.')
     purpose = 'experimental_semantic_regression' if experimental else 'full_dataset_finetune'
-    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only, 'purpose': purpose})
+    parent = validate_initialization(initialize_from, partitions, corpus, base_id, config, experimental) if initialize_from else None
+    signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only,
+                             'purpose': purpose, 'initialization': parent})
     if len(set(runtime.gather(signature))) != 1:
         raise ValueError('Processes received different corpora, base files or training settings.')
     execution = {**runtime.describe(), 'training_implementation': implementation_identity()}
@@ -129,7 +134,11 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     runtime.primary(lambda: (output_path / 'execution.json').write_text(canonical_json(execution), encoding='utf-8'))
     if recovered is not None:
         recovered_best = runtime.primary(lambda: carry_best_checkpoint(recovered_best, output_path))
-    core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
+    if initialize_from:
+        core, _, _, _ = load_checkpoint(initialize_from, base_path=base_path, device=runtime.device,
+                                       dtype=runtime.dtype, allow_experimental=experimental, trainable=True)
+    else:
+        core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
     if experimental:
         core.evidence_heads.requires_grad_(False)
     if config['gradient_checkpointing']:
@@ -145,12 +154,33 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     scheduler = get_linear_schedule_with_warmup(optimizer, int(total_steps * config['warmup_ratio']), total_steps)
     scaler = torch.amp.GradScaler('cuda', enabled=runtime.precision == 'fp16')
     baseline, median_reference = mean_baseline(partitions['train']), median_baseline(partitions['train'])
+    from collections import Counter
+    counts = Counter(row['category'] for row in partitions['train'])
+    category_weights = {c: len(partitions['train']) / (len(counts) * n) for c, n in counts.items()} if config['balance_categories'] else None
     best, stale, history, best_path = float('inf'), 0, [], None
     if recovered is not None:
         restore_state(recovered, core, optimizer, scheduler, scaler, runtime)
         history, stale, best_path = recovered['history'], recovered['stale'], recovered_best
         best = min(entry['validation']['macro_category_mae'] for entry in history)
+        from .checkpoint import inspect_checkpoint
+        recovered_manifest, _ = inspect_checkpoint(best_path, allow_experimental=experimental)
+        best = min(best, recovered_manifest.get('selected_validation_mae', best))
         del recovered
+    if parent:
+        runtime.primary(lambda: (output_path / 'initialization.json').write_text(canonical_json(parent), encoding='utf-8'))
+        if not history:
+            initial_validation = runtime.primary(lambda: report(partitions['validation'],
+                predict_rows(core, tokenizer, partitions['validation'], config, runtime.device), baseline, median_reference))
+            best = initial_validation['macro_category_mae']
+            best_path = runtime.primary(lambda: str(save_checkpoint(output_path / 'initial-model', core, tokenizer, config,
+                {'run_id': output_path.name, 'dataset': corpus, 'base_id': base_id, 'execution': execution,
+                 'mean_baseline': baseline, 'median_baseline': median_reference, 'epoch': 0,
+                 'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False,
+                 'selected_validation_mae': best,
+                 'initialization': parent, 'category_loss_weights': category_weights}, purpose=purpose)))
+            runtime.primary(lambda: (output_path / 'initial-validation.json').write_text(canonical_json(initial_validation), encoding='utf-8'))
+            if runtime.rank == 0:
+                print(canonical_json({'event': 'initial_validation', 'validation_mae': best}), file=sys.stderr, flush=True)
     loader = None
     for epoch in range(len(history), config['epochs']):
         epoch_started = time.monotonic()
@@ -158,7 +188,8 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
         options = {'multiprocessing_context': 'spawn', 'persistent_workers': True} if config['num_workers'] else {}
         loader = DataLoader(datasets['train'], batch_sampler=sampler, collate_fn=Collator(tokenizer),
                             num_workers=config['num_workers'], pin_memory=runtime.device.type == 'cuda', **options)
-        progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']), learn_evidence=not experimental)
+        progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']),
+                          learn_evidence=not experimental, category_weights=category_weights)
         if not progress['optimizer_steps']:
             raise ValueError('Every optimizer step overflowed; no trained checkpoint can be selected.')
         validation = runtime.primary(lambda: report(partitions['validation'],
@@ -172,7 +203,9 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
             best_path = runtime.primary(lambda: str(save_checkpoint(output_path / f'epoch-{epoch + 1}', core, tokenizer, config,
                 {'run_id': output_path.name, 'dataset': corpus, 'base_id': base_id, 'execution': execution,
                  'mean_baseline': baseline, 'median_baseline': median_reference, 'epoch': epoch + 1,
-                 'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False}, purpose=purpose)))
+                 'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False,
+                 'initialization': parent, 'category_loss_weights': category_weights,
+                 'selected_validation_mae': best}, purpose=purpose)))
         else:
             stale += 1
         runtime.primary(lambda: (output_path / 'history.json').write_text(canonical_json(history), encoding='utf-8'))
