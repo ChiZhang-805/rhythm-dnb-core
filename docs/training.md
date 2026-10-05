@@ -84,6 +84,8 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 模型读取完整文字；悲伤词并不直接决定分数。参考 [CheckList](https://aclanthology.org/2020.acl-main.442/) 和[对照样本测试](https://aclanthology.org/2020.findings-emnlp.117/)，分别检查否定、转折、当前/过去、自己/他人、反话和隐含表达。自编场景分数属于实验参考；训练场景与最终行为检查用不同文本，不把这些检查的通过率称作真实人群准确率。信息不足的反话不能仅靠几个词确定含义；[iSarcasmEval](https://aclanthology.org/2022.semeval-1.111/)专门区分作者意图与外部判断。
 
+`text/behavior.py` 同时检查语义不变时的评分偏移：对照清楚的本人描述、加入干扰信息的原句和固定范围提示。保留绝对分数，避免高低排序正确掩盖明显误判。提示实验不修改权重；还要检查普通文本是否退步，通过小样本检查也不直接替换正式输入流程。
+
 | 步骤 | 入口 | 做什么、保存什么 |
 | --- | --- | --- |
 | 训练文本模型 | `train-text` · `text/train.py` | 主要使用 GPU；从人工标注学习 17 项程度与证据，保存适配器、评分头及评价。 |
