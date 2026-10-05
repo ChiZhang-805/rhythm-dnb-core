@@ -70,6 +70,8 @@ def main(argv=None):
     check.add_argument('--development-only', action='store_true'); check.add_argument('--output', required=True)
     train = sub.add_parser('train-text'); train.add_argument('--corpus', required=True); train.add_argument('--base', required=True); train.add_argument('--config', required=True); train.add_argument('--output-dir', required=True)
     train.add_argument('--development-only', action='store_true', help='Tune using a train/validation-only corpus; never calibrate or test')
+    train.add_argument('--save-resume-state', action='store_true', help='Save full optimizer/random state at each completed epoch')
+    train.add_argument('--resume-state', help='Verified epoch receipt from a previous run; use a new output directory')
     text = sub.add_parser('score-text'); text.add_argument('--checkpoint', required=True); text.add_argument('--category', required=True); text.add_argument('--text', required=True); text.add_argument('--output', required=True)
     text.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
     text.add_argument('--base', help='Exact local base weights required for Qwen adapters')
@@ -78,6 +80,8 @@ def main(argv=None):
     train_experiment = sub.add_parser('train-text-experiment', help='Train only on the experimental development partition')
     train_experiment.add_argument('--corpus', required=True); train_experiment.add_argument('--base', required=True)
     train_experiment.add_argument('--config', required=True); train_experiment.add_argument('--output-dir', required=True)
+    train_experiment.add_argument('--save-resume-state', action='store_true')
+    train_experiment.add_argument('--resume-state')
     evaluate_experiment = sub.add_parser('evaluate-text-experiment', help='Evaluate a chosen experimental model on its sealed test set')
     evaluate_experiment.add_argument('--corpus', required=True); evaluate_experiment.add_argument('--base', required=True)
     evaluate_experiment.add_argument('--checkpoint', required=True); evaluate_experiment.add_argument('--output-dir', required=True)
@@ -174,7 +178,8 @@ def main(argv=None):
         result = check_training_inputs(_read(args.corpus), args.base, _read(args.config), development_only=args.development_only)
     elif args.command == 'train-text':
         from .text.train import train as fit_text
-        result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config), development_only=args.development_only)
+        result = fit_text(_read(args.corpus), args.base, args.output_dir, _read(args.config), development_only=args.development_only,
+                          save_resume_state=args.save_resume_state, resume_state=args.resume_state)
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']}))
         return 0
@@ -186,7 +191,8 @@ def main(argv=None):
         print(canonical_json(export_corpus(args.database, args.output_dir))); return 0
     elif args.command == 'train-text-experiment':
         from .text.experiment import train_experiment as fit_experiment
-        result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config))
+        result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config),
+                                save_resume_state=args.save_resume_state, resume_state=args.resume_state)
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_mae': result['validation_mae']}))
         return 0

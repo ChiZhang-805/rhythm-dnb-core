@@ -93,7 +93,7 @@ def prepare_development(payload):
                         'development_text_hashes': sorted({fingerprint(''.join(row['text'].split())) for row in rows})}
 
 
-def train_experiment(payload, base_path, output_dir, config):
+def train_experiment(payload, base_path, output_dir, config, *, save_resume_state=False, resume_state=None):
     # PSEUDOCODE: verify the experimental snapshot and base -> share the normal optimizer -> select by validation only.
     from .config import validate_config
     from .weights import check_base
@@ -105,7 +105,7 @@ def train_experiment(payload, base_path, output_dir, config):
     identity = check_base(base, config)
     with TrainingRuntime(config) as runtime:
         return _train(partitions, manifest, base, identity, Path(output_dir).resolve(), config, runtime,
-                      development_only=True, experimental=True)
+                      development_only=True, experimental=True, save_resume_state=save_resume_state, resume_state=resume_state)
 
 
 def validate_holdout(payload, manifest):

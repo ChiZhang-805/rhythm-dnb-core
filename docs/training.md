@@ -57,7 +57,9 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 \
 
 每项证据门槛先在验证组选定，再在独立校准组检验，失败不重新搜索门槛。每人每项按记录身份的固定哈希选一条，避免重复文本虚增人数。接收条件是精度的单侧 [Clopper–Pearson 下界](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats._result_classes.BinomTestResult.proportion_ci.html)达到 0.95，17 项 Bonferroni 分配总 alpha=0.05；全正确也至少需 114 位被接收者。0.95 是预登记使用目标，保证依赖参与者独立、校准样本代表实际输入且未被人为正负平衡等条件；不是临床有效性保证。证据不足输出 `null`。
 
-`execution.json` 记录设备和精度；`history.json` 记录每轮损失及更新；`model/` 保存适配器、评分头、分词器和文件哈希；`result.json` 与 `test-predictions.json` 保存测试结果（后者不含原文）。Qwen 推理必须同时提供原底座与适配器，不能随便换一个 `.pt/.pth` 文件。检查点不含完整优化器续训状态。
+`execution.json` 记录设备和精度；`history.json` 记录每轮损失及更新；`model/` 保存适配器、评分头、分词器和文件哈希；`result.json` 与 `test-predictions.json` 保存测试结果（后者不含原文）。Qwen 推理必须同时提供原底座与适配器，不能随便换一个 `.pt/.pth` 文件。
+
+训练时加 `--save-resume-state` 可在每轮结束后保存优化器、学习率和随机状态。中断后使用相同数据、配置、代码和运行环境，加 `--resume-state 原运行目录/resume/epoch-N.json`，并指定新的输出目录，即可从最近完整的一轮继续。应备份整个运行目录；只保存推理模型不能无损续训，尚未完成的那一轮需要重做。
 
 ```sh
 python -m rhythm_dnb score-text --checkpoint "$DNB_ROOT/runs/text-training/model" \

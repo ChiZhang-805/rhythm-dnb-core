@@ -38,10 +38,12 @@ class ScoringModel(nn.Module):
         encoder = AutoModel.from_pretrained(path, **options)
         if qwen:
             encoder.config.use_cache = False
+            if quantized:
+                from peft import prepare_model_for_kbit_training
+                # Keep embedding/residual precision identical during training and checkpoint inference.
+                encoder = prepare_model_for_kbit_training(encoder, use_gradient_checkpointing=False)
             if training:
-                from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-                if quantized:
-                    encoder = prepare_model_for_kbit_training(encoder, use_gradient_checkpointing=False)
+                from peft import LoraConfig, get_peft_model
                 encoder = get_peft_model(encoder, LoraConfig(r=config['lora_rank'], lora_alpha=config['lora_alpha'],
                     lora_dropout=config['dropout'], target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj',
                     'gate_proj', 'up_proj', 'down_proj'], bias='none'))

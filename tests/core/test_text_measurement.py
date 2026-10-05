@@ -99,6 +99,7 @@ class TextMeasurementTests(unittest.TestCase):
             self.assertGreater(result['history'][0]['optimizer_steps'], 0)
             model, tokenizer, _, _ = load_checkpoint(result['best_checkpoint'], base_path=base, device='cuda')
             self.assertTrue(model.encoder.is_loaded_in_4bit)
+            self.assertEqual(model.encoder.get_input_embeddings().weight.dtype, torch.float32)
             self.assertTrue(any('lora_B' in n and torch.count_nonzero(p).item() for n, p in model.encoder.named_parameters()))
             self.assertFalse(any(p.requires_grad for n, p in model.encoder.named_parameters() if 'lora_' not in n))
             model.eval()

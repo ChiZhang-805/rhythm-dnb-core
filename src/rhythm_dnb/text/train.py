@@ -97,7 +97,8 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             'optimizer_steps': updates, 'overflow_skipped_steps': skipped}
 
 
-def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False, experimental=False):
+def _train(partitions, corpus, base_path, base_id, output_path, config, runtime, *, development_only=False, experimental=False,
+           save_resume_state=False, resume_state=None):
     # PSEUDOCODE: initialize shared inputs -> shard training -> select on validation -> test the chosen model once.
     import torch
     from torch.nn.parallel import DistributedDataParallel
@@ -105,12 +106,15 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     from transformers import get_linear_schedule_with_warmup
     from .model import ScoringModel
     from .runtime import ShardedBatches
+    from .resume import carry_best_checkpoint, implementation_identity, read_state, restore_state, save_state
     if experimental and not development_only:
         raise ValueError('Experimental runs must keep the sealed test set outside training.')
     purpose = 'experimental_semantic_regression' if experimental else 'full_dataset_finetune'
     signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only, 'purpose': purpose})
     if len(set(runtime.gather(signature))) != 1:
         raise ValueError('Processes received different corpora, base files or training settings.')
+    execution = {**runtime.describe(), 'training_implementation': implementation_identity()}
+    recovered, recovered_best = read_state(resume_state, signature, execution, config) if resume_state else (None, None)
     random.seed(config['seed'])
     np.random.seed(config['seed'])
     torch.manual_seed(config['seed'])
@@ -122,8 +126,9 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     tokenizer = load_tokenizer(base_path)
     datasets = {name: ScoreDataset(rows, tokenizer, config['max_length']) for name, rows in partitions.items()}
     runtime.primary(lambda: output_path.mkdir(parents=True, exist_ok=False))
-    execution = runtime.describe()
     runtime.primary(lambda: (output_path / 'execution.json').write_text(canonical_json(execution), encoding='utf-8'))
+    if recovered is not None:
+        recovered_best = runtime.primary(lambda: carry_best_checkpoint(recovered_best, output_path))
     core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
     if experimental:
         core.evidence_heads.requires_grad_(False)
@@ -141,7 +146,13 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     scaler = torch.amp.GradScaler('cuda', enabled=runtime.precision == 'fp16')
     baseline, median_reference = mean_baseline(partitions['train']), median_baseline(partitions['train'])
     best, stale, history, best_path = float('inf'), 0, [], None
-    for epoch in range(config['epochs']):
+    if recovered is not None:
+        restore_state(recovered, core, optimizer, scheduler, scaler, runtime)
+        history, stale, best_path = recovered['history'], recovered['stale'], recovered_best
+        best = min(entry['validation']['macro_category_mae'] for entry in history)
+        del recovered
+    loader = None
+    for epoch in range(len(history), config['epochs']):
         epoch_started = time.monotonic()
         sampler = ShardedBatches(len(datasets['train']), config['batch_size'], runtime.rank, runtime.world_size, config['seed'], epoch)
         options = {'multiprocessing_context': 'spawn', 'persistent_workers': True} if config['num_workers'] else {}
@@ -165,6 +176,9 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
         else:
             stale += 1
         runtime.primary(lambda: (output_path / 'history.json').write_text(canonical_json(history), encoding='utf-8'))
+        if save_resume_state or resume_state:
+            save_state(output_path / 'resume', core, optimizer, scheduler, scaler, runtime, execution,
+                       signature, history, stale, best_path)
         if runtime.rank == 0:
             print(canonical_json({'epoch': epoch + 1, 'validation_mae': metric, 'training_loss': progress['training_loss'],
                                   'seconds': history[-1]['seconds'], 'best_checkpoint': best_path}), file=sys.stderr, flush=True)
@@ -203,7 +217,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     return runtime.primary(finish)
 
 
-def train(rows, base_path, output_path, config, *, development_only=False):
+def train(rows, base_path, output_path, config, *, development_only=False, save_resume_state=False, resume_state=None):
     # PSEUDOCODE: require reviewed real-source corpus and verified base files before starting training.
     from .runtime import TrainingRuntime
     config = validate_config(config)
@@ -211,4 +225,5 @@ def train(rows, base_path, output_path, config, *, development_only=False):
     base_path, output_path = Path(base_path).resolve(), Path(output_path).resolve()
     base_id = _check_base(base_path, config)
     with TrainingRuntime(config) as runtime:
-        return _train(partitions, corpus, base_path, base_id, output_path, config, runtime, development_only=development_only)
+        return _train(partitions, corpus, base_path, base_id, output_path, config, runtime, development_only=development_only,
+                      save_resume_state=save_resume_state, resume_state=resume_state)
