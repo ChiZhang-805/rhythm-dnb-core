@@ -5,15 +5,57 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import sqlite3
+from contextlib import closing
 
 from rhythm_dnb.provenance import fingerprint
 from rhythm_dnb.text.experiment import prepare_development, train_experiment
-from rhythm_dnb.text.expansion import person_roles, template_identity, text_identity, MENTIONS
+from rhythm_dnb.text.expansion import person_roles, template_identity, text_identity, MENTIONS, export_expansion
+from rhythm_dnb.text.schema import CATEGORIES, FORMAL_CATEGORIES
 from rhythm_dnb.text.checkpoint import inspect_checkpoint, load_checkpoint
 from core.test_text_experiment import experimental_fixture
 
 
 class TextExpansionTests(unittest.TestCase):
+    def test_sqlite_export_is_read_only_and_sparse_holdout_is_sealed(self):
+        from rhythm_dnb.provenance import file_hash
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base, config, legacy = experimental_fixture(root)
+            dev = json.loads((legacy / 'development.json').read_text(encoding='utf-8'))
+            initial = train_experiment(dev, base, root / 'initial', config)
+            database = root / 'rhythm.sqlite'
+            columns = [k for c in FORMAL_CATEGORIES for k in CATEGORIES[c][1]]
+            texts = {'emotion': '心情开心但有些悲伤焦虑烦躁', 'social': '愿意交流满意但有孤独和负担',
+                     'diet': '胃口不错没有吃撑饭点规律', 'sleep': '昨晚很快睡着一觉到天亮醒后精神好睡眠质量好'}
+            with closing(sqlite3.connect(database)) as db:
+                db.execute('CREATE TABLE observations(record_id TEXT,participant_id TEXT,source_dataset TEXT,' +
+                           ','.join('text_' + k + ' REAL' for k in columns) + ')')
+                db.execute('CREATE TABLE raw_inputs(record_id TEXT,payload TEXT)')
+                db.execute('CREATE TABLE observation_provenance(record_id TEXT,payload TEXT)')
+                for i, name in enumerate('甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉'):
+                    rid = 'row-' + name
+                    db.execute('INSERT INTO observations VALUES(' + ','.join('?' for _ in range(3+len(columns))) + ')',
+                               [rid, 'person-' + name, 'fixture', *([40.] * len(columns))])
+                    raw = {c + '_description_text': name + text for c,text in texts.items()}
+                    if i == 0:
+                        raw['sleep_description_text'] = '甲凌晨三点睡，早上八点醒。'
+                    db.execute('INSERT INTO raw_inputs VALUES(?,?)', (rid,json.dumps(raw)))
+                    provenance = {'provenance': {'text_' + k: {'method': 'manual_contextual_rewrite'} for k in columns}}
+                    db.execute('INSERT INTO observation_provenance VALUES(?,?)', (rid,json.dumps(provenance)))
+                db.commit()
+            before = file_hash(database)
+            result = export_expansion(database,legacy/'development.json',legacy/'test.json',
+                                      initial['best_checkpoint'],root/'expanded',seed=42)
+            self.assertEqual(before,file_hash(database))
+            self.assertEqual(result['audit_summary']['excluded_reasons']['no_explicit_metric_mention'],1)
+            new = json.loads((root/'expanded/development.json').read_text(encoding='utf-8'))
+            _, manifest = prepare_development(new)
+            heldout = json.loads((root/'expanded/test.json').read_text(encoding='utf-8'))
+            from rhythm_dnb.text.experiment import validate_holdout
+            self.assertTrue(validate_holdout(heldout,{'dataset':manifest}))
+            self.assertEqual(set(result['categories']['test']),set(FORMAL_CATEGORIES))
+
     def test_identity_preserves_negation_and_person_visits(self):
         import re
         self.assertNotEqual(text_identity('我开心'), text_identity('我不开心'))
