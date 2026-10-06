@@ -80,3 +80,7 @@ train_experimental_evidence,false,text/config.py,实验依据学习,只在显式
 require_all_validation_metrics,true,text/config.py,完整验证门槛,主配置开启；库默认false兼容历史局部实验并记录覆盖警告,缺少任一训练或验证指标即阻断而不是改平均分掩盖,measurement_contract,17项逐指标验证；数量不等于独立证据
 maximum_text_characters,10000,text/schema.py,输入资源保护,应用输入上限；真正模型上限由token计数决定,根据服务容量调整；不静默截断,hardware,接口保护约定；不代表预测性能参数
 kernel_min_samples,9,dnb/single_sample.py,底层兼容门槛,低层数值接口历史保护；正式参考仍至少100人,不能用该低层门槛绕过研究级人数要求,hardware,接口保护约定；不代表预测性能参数
+guard_inverse_regularization,caller supplied,text/guard.py,独立依据头的逆正则强度,本次预先给定0.0001;0.001;0.01;0.1;1并按逐指标验证log loss选取,扩大候选范围只能用开发组决定；不能按测试结果回选,validation_search,训练集拟合缩放和权重；验证集选择强度；不声称全局最优
+guard_target_precision,caller supplied,text/guard.py,实验接收目标,本次明确给定0.95以检查可靠性与覆盖率的权衡,只能作为经验验证目标；正式接收仍需独立人群校准,design_choice,https://proceedings.mlr.press/v97/geifman19a.html；本实现不是该论文复现
+guard_solver_tolerance,1e-7,text/guard.py,线性优化收敛阈值,数值求解精度保护不是预测性能参数,收敛警告直接失败；修改须检查预测及损失稳定性,numerical_safeguard,https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
+guard_solver_max_iterations,2000,text/guard.py,线性优化计算上限,给高维冻结表征拟合预留迭代；达到上限仍未收敛即失败,按收敛状态调整而非以测试成绩选择,hardware,https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html

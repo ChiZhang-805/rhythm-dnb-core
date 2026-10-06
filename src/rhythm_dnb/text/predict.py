@@ -9,7 +9,7 @@ from .evidence import qualified_scores
 
 
 class TextPredictor:
-    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False):
+    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False, guard_dir=None):
         # PSEUDOCODE: inspect a caller-selected local checkpoint; defer accelerator allocation until inference.
         self.checkpoint = checkpoint
         self.manifest, self.model_identity = inspect_checkpoint(checkpoint, allow_experimental=allow_experimental)
@@ -18,6 +18,12 @@ class TextPredictor:
         self.base_path = base_path
         self._loaded = False
         self._lock = threading.Lock()
+        self.guard = None
+        if guard_dir is not None:
+            from .guard import EvidenceGuard
+            if not allow_experimental or self.manifest['purpose'] != 'experimental_semantic_regression':
+                raise ValueError('An experimental guard cannot qualify formal DNB inputs.')
+            self.guard = EvidenceGuard(guard_dir, self.model_identity)
 
     def predict(self, category, text):
         # PSEUDOCODE: validate category/text -> encode without truncation -> return unrounded bounded intensities.
@@ -34,14 +40,23 @@ class TextPredictor:
                 self._loaded = True
             encoded = encode(self.tokenizer, category, text, self.manifest['config']['max_length'])
             with torch.inference_mode():
-                outputs = self.model(**{k: torch.tensor([v], device=self.device) for k, v in encoded.items()})
+                outputs = self.model(**{k: torch.tensor([v], device=self.device) for k, v in encoded.items()},
+                                     return_representation=self.guard is not None)
                 values = (outputs[category][0].float().cpu() * 100).tolist()
                 evidence = dict(zip(CATEGORIES[category][1], torch.sigmoid(outputs['_evidence'][category][0].float()).cpu().tolist()))
             if any(not math.isfinite(v) or not 0 <= v <= 100 for v in values):
                 raise ValueError('Nonfinite/out-of-range semantic prediction.')
             estimates = dict(zip(CATEGORIES[category][1], values))
             if self.manifest['purpose'] == 'experimental_semantic_regression':
-                return {'category': category, 'scores': {k: None for k in estimates}, 'normalized': {k: None for k in estimates},
+                diagnostic = {}
+                if self.guard is not None:
+                    probabilities = self.guard.probabilities(outputs['_representation'].float().cpu().numpy(), category)
+                    diagnostic = {'evidence_estimates': {k: float(v[0]) for k, v in probabilities.items()},
+                        'evidence_guard_kind': 'experimental_frozen_feature_classifier',
+                        'experimental_acceptance': {k: self.guard.manifest['heads'][k]['threshold'] is not None and
+                            bool(v[0] >= self.guard.manifest['heads'][k]['threshold']) for k, v in probabilities.items()},
+                        'acceptance_certified': False}
+                return {**diagnostic, 'category': category, 'scores': {k: None for k in estimates}, 'normalized': {k: None for k in estimates},
                         'estimates': estimates, 'reasons': {k: 'uncalibrated_experimental_text_evidence' for k in estimates},
                         'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),
                         'score_kind': 'experimental_semantic_reference_estimate', 'evidence_calibrated': False,

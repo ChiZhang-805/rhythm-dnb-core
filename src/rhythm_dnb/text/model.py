@@ -61,8 +61,8 @@ class ScoringModel(nn.Module):
         # PSEUDOCODE: construct a local unquantized architecture before restoring full comparator weights.
         return cls(AutoModel.from_config(AutoConfig.from_pretrained(path, local_files_only=True), trust_remote_code=False), dropout, scope_supervision=scope_supervision)
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None):
-        # PSEUDOCODE: encode valid tokens -> pool CLS or last non-padding token -> score intensity and available evidence.
+    def representation(self, input_ids, attention_mask, token_type_ids=None):
+        # PSEUDOCODE: encode valid tokens -> return full text and token representations without changing scoring weights.
         qwen = self.encoder.config.model_type == 'qwen3'
         options = {'input_ids': input_ids, 'attention_mask': attention_mask}
         if qwen:
@@ -78,10 +78,16 @@ class ScoringModel(nn.Module):
             pooled = hidden[torch.arange(len(hidden), device=hidden.device), last]
         else:
             pooled = hidden[:, 0]
-        full_context = pooled.float()
+        return pooled.float(), hidden
+
+    def forward(self, input_ids, attention_mask, token_type_ids=None, *, return_representation=False):
+        # PSEUDOCODE: reuse the exact frozen representation -> score independent intensity, evidence and optional scope heads.
+        full_context, hidden = self.representation(input_ids, attention_mask, token_type_ids)
         pooled = self.dropout(full_context)
         result = {name: torch.sigmoid(head(pooled)) for name, head in self.heads.items()}
         result['_evidence'] = {name: head(pooled) for name, head in self.evidence_heads.items()}
+        if return_representation:
+            result['_representation'] = full_context
         if self.scope_head is not None:
             # A causal token alone cannot see a later attribution or reversal; condition it on the complete text.
             tokens = nn.functional.layer_norm(hidden.float(), (hidden.shape[-1],))

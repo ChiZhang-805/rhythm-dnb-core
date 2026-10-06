@@ -42,3 +42,5 @@ python -m rhythm_dnb score-text-experiment \
 当前实验权重尚未校准“文本是否有足够依据”，所以可用于下游的 `scores` 和 `normalized` 保留 `null`，`reasons` 说明原因。旧版调用者应改读 `estimates` 查看实验分数，不能把 `null` 填成零或偷偷回退到原始估计。
 
 这一步完成“文本 → 数值”。输出中的 `eligible_for_primary_dnb: false` 表示它目前是实验文本模型，不能直接当作已经验证的节律紊乱 0/1 预警结果。
+
+可选研究附件 `models/rhythm-text-evidence/` 是另训的依据判断器。上述命令增加 `--guard models/rhythm-text-evidence` 后，会多输出 `evidence_estimates` 和 `experimental_acceptance`，帮助检查是否具备评分依据；原始程度分数不变。它仍会误放行或误拒，`acceptance_certified=false`，因此 `scores` 继续保留空值。它不是新的程度评分主模型。

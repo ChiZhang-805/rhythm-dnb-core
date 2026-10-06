@@ -72,6 +72,14 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 下载支持分段续传，核对固定提交的官方文件大小、SHA-256/Git 摘要及全部权重分片，再生成 `download.json`；该文件存在且校验通过才代表底座完整。完整底座不等于已完成本项目微调。
 
+## 冻结评分模型，另训依据判断
+
+`extract-text-features` 缓存固定模型的句子表示，不修改基模、LoRA 或程度头。`fit-text-guard` 只读取训练与验证缓存，按各指标验证 log loss 选择逻辑回归正则强度；接收门槛按显式给定的验证精度目标选择。`evaluate-text-guard` 再读取独立存放的测试缓存；看过的场景必须加 `--regression-only`。缓存与判断器都绑定原模型哈希，不能换底座后混用。
+
+本次正则候选为 `0.0001 0.001 0.01 0.1 1`，实验目标为 `--target-precision 0.95`；目标不是已经达到的总体保证。自编正负均衡语料上的表现不能代替正式独立校准。训练需要 `research` 依赖；提取表示使用 GPU，线性判断器拟合使用 CPU。
+
+双人复核可用 `export-review-sheet --packet rater-A.json --output rater-A.xlsx` 导出空表，填完后用 `import-review-sheet --packet rater-A.json --workbook rater-A.xlsx --output completed-A.json` 导入。两人分别填写各自的 A/B 表，再交给 `compare-text-reviews`；工具检查身份声明和原文依据，不替人完成复核。
+
 ## 文本训练之后怎么走
 
 自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选轮次。锁定模型后才运行 `evaluate-text-experiment`；已查看的测试只能加 `--regression-only` 作开发检查。`score-text-experiment` 把原始 0–100 分放在 `estimates`，未校准的 `scores` 保留为空；实验权重不能默认接入正式 DNB。

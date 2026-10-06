@@ -91,6 +91,10 @@ def main(argv=None):
     blind = sub.add_parser('prepare-text-review', help='Prepare two blinded independent annotation packets')
     blind.add_argument('--corpus', required=True); blind.add_argument('--output-dir', required=True)
     blind.add_argument('--per-metric', type=int, required=True); blind.add_argument('--seed', type=int, required=True)
+    sheet_export = sub.add_parser('export-review-sheet', help='Make a blank spreadsheet for one blinded human reviewer')
+    sheet_export.add_argument('--packet', required=True); sheet_export.add_argument('--output', required=True)
+    sheet_import = sub.add_parser('import-review-sheet', help='Validate a completed human review without automatic adjudication')
+    sheet_import.add_argument('--packet', required=True); sheet_import.add_argument('--workbook', required=True); sheet_import.add_argument('--output', required=True)
     adjudicate = sub.add_parser('compare-text-reviews', help='Compare completed independent reviews without averaging or writing labels')
     adjudicate.add_argument('--coordinator', required=True); adjudicate.add_argument('--first', required=True); adjudicate.add_argument('--second', required=True)
     adjudicate.add_argument('--tolerance', type=float, required=True); adjudicate.add_argument('--output', required=True)
@@ -120,6 +124,17 @@ def main(argv=None):
     score_experiment.add_argument('--category', required=True); score_experiment.add_argument('--text', required=True)
     score_experiment.add_argument('--output', required=True)
     score_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
+    score_experiment.add_argument('--guard', help='Optional separate experimental evidence guard bound to this checkpoint')
+    features = sub.add_parser('extract-text-features', help='Cache frozen representations without modifying intensity weights')
+    features.add_argument('--corpus', required=True); features.add_argument('--checkpoint', required=True)
+    features.add_argument('--base', required=True); features.add_argument('--output-dir', required=True)
+    features.add_argument('--batch-size', type=int, default=32); features.add_argument('--device', default='cuda', choices=('cuda','cpu','auto'))
+    guard = sub.add_parser('fit-text-guard', help='Fit separate evidence heads using train/validation only')
+    guard.add_argument('--cache', required=True); guard.add_argument('--output-dir', required=True)
+    guard.add_argument('--regularization', type=float, nargs='+', required=True); guard.add_argument('--target-precision', type=float, required=True)
+    guard_test = sub.add_parser('evaluate-text-guard', help='Evaluate frozen experimental guard on a separate sealed test')
+    guard_test.add_argument('--cache', required=True); guard_test.add_argument('--guard', required=True); guard_test.add_argument('--output-dir', required=True)
+    guard_test.add_argument('--regression-only', action='store_true', help='Mark previously exposed cases as a development regression')
     args = parser.parse_args(argv)
     if args.command == 'hardware':
         from .text.runtime import hardware_report
@@ -238,6 +253,12 @@ def main(argv=None):
     elif args.command == 'compare-text-reviews':
         from .text.review import compare_blind_review
         result = compare_blind_review(_read(args.coordinator), _read(args.first), _read(args.second), tolerance=args.tolerance)
+    elif args.command == 'export-review-sheet':
+        from .text.review_sheet import export_review_sheet
+        print(canonical_json(export_review_sheet(_read(args.packet), args.output))); return 0
+    elif args.command == 'import-review-sheet':
+        from .text.review_sheet import import_review_sheet
+        result = import_review_sheet(_read(args.packet), args.workbook)
     elif args.command == 'seal-text-experiment':
         from .text.experiment import seal_experiment
         print(canonical_json(seal_experiment(_read(args.corpus)['rows'], _read(args.exposed)['rows'], args.output_dir,
@@ -285,6 +306,17 @@ def main(argv=None):
         print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']})); return 0
     elif args.command == 'score-text-experiment':
         from .text.predict import TextPredictor
-        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True).predict(args.category, args.text)
+        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True, guard_dir=args.guard).predict(args.category, args.text)
+    elif args.command == 'extract-text-features':
+        from .text.features import extract_features
+        print(canonical_json(extract_features(_read(args.corpus)['rows'], args.checkpoint, args.base, args.output_dir,
+            device=args.device, batch_size=args.batch_size))); return 0
+    elif args.command == 'fit-text-guard':
+        from .text.guard import fit_guard
+        result = fit_guard(args.cache, args.output_dir, regularization=args.regularization, target_precision=args.target_precision)
+        print(canonical_json({'output_dir': args.output_dir, 'heads': len(result['heads']), 'evidence_calibrated': False})); return 0
+    elif args.command == 'evaluate-text-guard':
+        from .text.guard import evaluate_guard
+        print(canonical_json(evaluate_guard(args.cache, args.guard, args.output_dir, regression_only=args.regression_only))); return 0
     save_report(result, args.output)
     print(canonical_json({'output': args.output})); return 0
