@@ -1,0 +1,14 @@
+# Direct dependency constraints verified with the expanded text model on Linux / Python 3.12.
+# Install a compatible CUDA PyTorch build first; this is not a complete transitive lock.
+# The verification environment used torch 2.8.0+cu128 on NVIDIA A40.
+torch==2.8.0
+transformers==5.18.0
+peft==0.21.2
+accelerate==1.15.0
+bitsandbytes==0.50.2
+safetensors==0.8.0
+numpy==2.1.2
+scipy==1.18.1
+huggingface-hub==1.33.0
+tokenizers==0.23.2
+tzdata==2026.5

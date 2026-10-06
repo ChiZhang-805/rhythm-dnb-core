@@ -31,8 +31,9 @@ python -m rhythm_dnb --help
 
 本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
 
-## 只保留四份说明
+## 使用说明
 
+- [已训练模型怎么用](docs/model-use.md)：文件位置、一条预测命令和分数含义。
 - [研究方案](docs/research.md)：预测目标、DNB 计算和验证方法。
 - [数据接入](docs/data.md)：真实数据需要提供什么。
 - [服务器训练](docs/training.md)：GPU、启动命令和运行记录。
