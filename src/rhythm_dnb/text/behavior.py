@@ -101,3 +101,42 @@ def context_report(cases, predictions):
             'by_phenomenon': {name: summarize([r for r in results if r['phenomenon'] == name])
                               for name in sorted({r['phenomenon'] for r in results})}, 'results': results,
             'interpretation': 'Anchor drift is consistency with a clean paraphrase, not clinical or population accuracy.'}
+
+
+def scope_consistency_report(records, predictions):
+    # PSEUDOCODE: resolve evidence-linked anchors and retain drift, absence scores and paired ordering together.
+    from .annotations import validate_scope_annotations
+    validate_scope_annotations(records)
+    if len(predictions) != len(records):
+        raise ValueError('Each structured annotation needs exactly one prediction.')
+    scores = {}
+    for row, prediction in zip(records, predictions):
+        value = prediction['scores'][row['metric']]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError('Structured prediction must be finite and within the metric bounds.')
+        scores[row['record_id']] = value
+    results, pairs = [], defaultdict(dict)
+    for row in records:
+        expected = row['expectation']
+        anchor_id = expected['equivalent_to']
+        if row['record_id'] == anchor_id:
+            continue
+        prediction, anchor = scores[row['record_id']], scores[anchor_id]
+        results.append({'record_id': row['record_id'], 'family_id': row['family_id'], 'category': row['category'],
+            'metric': row['metric'], 'variant': row['variant'], 'order': expected['order'], 'score': prediction,
+            'anchor_score': anchor, 'anchor_drift': abs(prediction - anchor),
+            'explicit_absence': expected['explicit_absence'], 'excluded_reasons': sorted({s['reason'] for s in row['target']['excluded']})})
+        group = pairs[(row['family_id'], row['variant'])]
+        if expected['order'] in group:
+            raise ValueError('A context variant has duplicate lower or higher members.')
+        group[expected['order']] = prediction
+    if not results or any(set(pair) != {'lower', 'higher'} for pair in pairs.values()):
+        raise ValueError('Structured consistency checks need complete lower/higher context pairs.')
+    absent = [r['score'] for r in results if r['explicit_absence']]
+    return {'contexts': len(results), 'pairs': len(pairs),
+            'ordered_pairs': sum(pair['higher'] > pair['lower'] for pair in pairs.values()),
+            'mean_anchor_drift': mean(r['anchor_drift'] for r in results),
+            'median_anchor_drift': median(r['anchor_drift'] for r in results),
+            'explicit_absence_contexts': len(absent), 'mean_absence_score': mean(absent) if absent else None,
+            'results': results, 'independent_human_gold': False,
+            'interpretation': 'Consistency against the same model on a clean equivalent statement, not population accuracy.'}
