@@ -24,6 +24,10 @@ def prepare_corpus(rows, *, require_all_categories=True, require_calibration=Fal
             raise ValueError('Development-only input must exclude calibration and test rows.')
         if not isinstance(row.get('scores'), dict) or set(row['scores']) != set(CATEGORIES[category][1]) or any(v is not None and (type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 100) for v in row['scores'].values()):
             raise ValueError('Semantic scores must cover the category heads with 0-100 or null for insufficient evidence.')
+        from .labels import validate_labels
+        from .annotations import validate_scope_targets
+        validate_labels(row)
+        validate_scope_targets(row)
         if row.get('review_status') != 'accepted' or not isinstance(row.get('annotation_evidence_id'), str) or not row['annotation_evidence_id'].strip():
             raise ValueError('Unreviewed semantic reference labels.')
         if row.get('observed_at') is not None:
@@ -47,7 +51,9 @@ def prepare_corpus(rows, *, require_all_categories=True, require_calibration=Fal
             for category, (_, keys) in CATEGORIES.items():
                 for key in keys:
                     present = [r['scores'][key] is not None for r in items if r['category'] == category]
-                    if not any(present) or require_calibration and split == 'train' and all(present):
+                    from .labels import evidence_target
+                    has_negative = any(evidence_target(r, key) == 0 for r in items if r['category'] == category)
+                    if not any(present) or require_calibration and split == 'train' and not has_negative:
                         raise ValueError(f'{split}:{key} requires observed scores and training examples of insufficient evidence.')
     manifest = {'id': fingerprint(sorted(rows, key=lambda r: r['example_id'])),
                 'counts': {k: len(v) for k, v in partitions.items()},

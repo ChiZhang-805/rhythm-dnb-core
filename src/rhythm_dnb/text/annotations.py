@@ -5,7 +5,41 @@ from .schema import CATEGORIES, METRICS, validate_input
 from ..provenance import fingerprint
 
 
-def compare_annotations(first, second, *, tolerance=10):
+def validate_scope_targets(row):
+    # PSEUDOCODE: validate metric-specific current-self evidence/exclusions before token alignment.
+    for key, target in row.get('scope_targets', {}).items():
+        if key not in CATEGORIES[row['category']][1] or target.get('experiencer') != 'self' or not target.get('period'):
+            raise ValueError('Scope targets require a valid metric, self and an explicit period.')
+        if not target.get('evidence') and not target.get('excluded'):
+            raise ValueError('Scope supervision requires at least one annotated span.')
+        for kind in ('evidence', 'excluded'):
+            for span in target.get(kind, []):
+                a, b = span['start'], span['end']
+                if type(a) is not int or type(b) is not int or not 0 <= a < b <= len(row['text']) or row['text'][a:b] != span['quote']:
+                    raise ValueError('Scope offsets must match the original text.')
+                if kind == 'excluded' and span.get('reason') not in ('other_person', 'past_resolved', 'negated_claim', 'ironic_literal'):
+                    raise ValueError('Excluded scope requires a reason.')
+        if any(max(a['start'], b['start']) < min(a['end'], b['end']) for a in target.get('evidence', []) for b in target.get('excluded', [])):
+            raise ValueError('Scope evidence and exclusions overlap.')
+
+
+def scope_token_targets(row, offsets):
+    # PSEUDOCODE: label only explicitly annotated tokens; prompt, padding and unreviewed text stay masked.
+    validate_scope_targets(row)
+    targets = [[float('nan')] * len(METRICS) for _ in offsets]
+    for key, target in row.get('scope_targets', {}).items():
+        column = next(i for i, metric in enumerate(METRICS) if metric[0] == key)
+        for kind, label in (('evidence', 1.), ('excluded', 0.)):
+            for span in target.get(kind, []):
+                hits = [i for i, (a, b) in enumerate(offsets) if b > a and a >= span['start'] and b <= span['end']]
+                if not hits:
+                    raise ValueError('A scope span has no complete token; revise its boundaries rather than guessing.')
+                for i in hits:
+                    targets[i][column] = label
+    return targets
+
+
+def compare_annotations(first, second, *, tolerance):
     # PSEUDOCODE: verify same item/different raters -> compare every head -> request adjudication for disagreement.
     if type(tolerance) not in (int, float) or not np.isfinite(tolerance) or not 0 <= tolerance <= 100 or not first.get('rater_id') or not second.get('rater_id'):
         raise ValueError('Invalid adjudication tolerance or rater identity.')

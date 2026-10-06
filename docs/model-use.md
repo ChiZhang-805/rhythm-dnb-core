@@ -2,6 +2,8 @@
 
 当前保留 `rhythm-text-expanded`：在 3,420 条普通测试文本上，四类指标的平均绝对误差约 **4.91 分**（自建实验参考评分）。复杂人物、转述和反话仍可能判断错误；这不是经过真实人群验证的准确率。
 
+六次后续实验改善了部分复杂语境，但未全面胜出，因此主模型不变；完整比较见 [修缮结果](research.md#修缮结果与验证边界)。本地另存 `models/rhythm-text-context-candidate/` 供研究对照，不应直接当作升级替换。
+
 ## 文件放哪里
 
 进入服务器上的项目目录，保持下面的结构。两个模型文件夹都要完整保留，不能只拿出一个权重文件。
@@ -35,6 +37,8 @@ python -m rhythm_dnb score-text-experiment \
 
 ## 输出怎么看
 
-打开 `runs/text-score.json`，查看 `scores`：每项是 **0～100 分的程度估计，不是概率**。总体心情 `mood_valence` 越高表示越好；悲伤 `sadness_intensity`、焦虑 `anxiety_intensity` 越高表示越强，所以不能把所有高分都理解为好。
+打开 `runs/text-score.json`，查看 `estimates`：每项是 **0～100 分的原始程度估计，不是概率**。总体心情 `mood_valence` 越高表示越好；悲伤 `sadness_intensity`、焦虑 `anxiety_intensity` 越高表示越强，所以不能把所有高分都理解为好。
+
+当前实验权重尚未校准“文本是否有足够依据”，所以可用于下游的 `scores` 和 `normalized` 保留 `null`，`reasons` 说明原因。旧版调用者应改读 `estimates` 查看实验分数，不能把 `null` 填成零或偷偷回退到原始估计。
 
 这一步完成“文本 → 数值”。输出中的 `eligible_for_primary_dnb: false` 表示它目前是实验文本模型，不能直接当作已经验证的节律紊乱 0/1 预警结果。

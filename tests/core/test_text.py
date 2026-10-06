@@ -48,9 +48,9 @@ class TextTests(unittest.TestCase):
     def test_annotation_disagreement_preserved(self):
         first = {'example_id': '1', 'category': 'stress', 'rater_id': 'a', 'scores': {'stress_intensity': 10}}
         second = {**first, 'rater_id': 'b', 'scores': {'stress_intensity': 40}}
-        self.assertTrue(compare_annotations(first, second)['adjudication_required'])
+        self.assertTrue(compare_annotations(first, second, tolerance=10)['adjudication_required'])
         with self.assertRaises(ValueError):
-            compare_annotations(first, first)
+            compare_annotations(first, first, tolerance=10)
 
     def test_full_training_checkpoint_and_continuous_inference(self):
         import torch

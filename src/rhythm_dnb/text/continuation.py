@@ -14,6 +14,8 @@ def validate_initialization(folder, partitions, corpus, base_id, config, experim
     for key in ('model_id', 'revision', 'quantization', 'lora_rank', 'lora_alpha', 'dropout'):
         if previous['config'][key] != config[key]:
             raise ValueError('Continuation architecture mismatch: ' + key)
+    if previous['config'].get('scope_loss_weight', 0) > 0 and not config.get('scope_loss_weight', 0):
+        raise ValueError('A trained scope head cannot be silently removed during continuation.')
     expected = corpus.get('initial_checkpoint_id')
     if expected != identity:
         raise ValueError('Expanded corpus must be sealed against the exact initial checkpoint.')

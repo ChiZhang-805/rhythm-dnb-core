@@ -27,5 +27,6 @@
   "evidence_alpha": 0.05,
   "adam_beta1": 0.9,
   "adam_beta2": 0.999,
-  "adam_epsilon": 1e-08
+  "adam_epsilon": 1e-08,
+  "require_all_validation_metrics": true
 }

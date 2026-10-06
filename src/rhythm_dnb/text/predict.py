@@ -41,9 +41,11 @@ class TextPredictor:
                 raise ValueError('Nonfinite/out-of-range semantic prediction.')
             estimates = dict(zip(CATEGORIES[category][1], values))
             if self.manifest['purpose'] == 'experimental_semantic_regression':
-                return {'category': category, 'scores': estimates, 'normalized': {k: v / 100 for k, v in estimates.items()},
+                return {'category': category, 'scores': {k: None for k in estimates}, 'normalized': {k: None for k in estimates},
+                        'estimates': estimates, 'reasons': {k: 'uncalibrated_experimental_text_evidence' for k in estimates},
                         'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),
                         'score_kind': 'experimental_semantic_reference_estimate', 'evidence_calibrated': False,
+                        'evidence_trained': self.manifest.get('evidence_trained', False),
                         'independent_human_gold': False, 'eligible_for_primary_dnb': False}
             scores, reasons = qualified_scores(estimates, evidence, self.manifest.get('evidence_calibration'))
             return {'category': category, 'scores': scores, 'normalized': {k: v / 100 if v is not None else None for k, v in scores.items()},

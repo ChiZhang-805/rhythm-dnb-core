@@ -74,7 +74,15 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 ## 文本训练之后怎么走
 
-自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 固定导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选择轮次；锁定模型后才运行 `evaluate-text-experiment`。`score-text-experiment` 接收类别和中文文本，输出该类别的 0–100 分数。实验模型不训练证据头、不声称人工金标准或校准有效，也不能通过默认入口接入正式 DNB。所有原始来源和划分均保留。
+自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选轮次。锁定模型后才运行 `evaluate-text-experiment`；已查看的测试只能加 `--regression-only` 作开发检查。`score-text-experiment` 把原始 0–100 分放在 `estimates`，未校准的 `scores` 保留为空；实验权重不能默认接入正式 DNB。
+
+标注用 `label_states` 区分 `supported`（有依据与分数）、`supported_unscored`（有依据但程度未定）、`explicit_absence`（症状明确不存在）、`insufficient_evidence`（信息不足）、`unreviewed`（待标注）和 `disputed`（有分歧）。只有第一、第三种填写数值，其余保持空值；“有依据但未定分”可训练证据判断，不编造程度。`train_experimental_evidence=true` 只从显式标注学习证据头，仍须独立校准才能接收分数。
+
+`scope_targets` 按指标记录本人、时段、证据原文和应排除的片段；`scope_loss_weight>0` 启用逐 token 的辅助监督，只有标过的片段参与损失。它可与旧适配器一起续训并完整保存；辅助头不是已验证的解释器。用相同数据、预算和种子比较权重为零的对照，不预设某个权重最优。
+
+修缮入口：`audit-text` 查全部 17 项覆盖；`prepare-text-review` 生成隐藏旧答案的双人标注包；`compare-text-reviews` 列出分歧而不自动平均；`refresh-text-source` 从最新只读库恢复来源时间和文本；`seal-text-experiment` 拒绝旧暴露记录进入新留出集。时间只是自编文本对应的源记录时间，不能冒充真实文本提交时间。
+
+主配置启用 `require_all_validation_metrics=true`，训练或验证缺少压力等任一指标的参考就先补数据；局部实验可显式关闭并保留警告。`study-text` 接收完整配置组成的 `arms`、至少两个预登记 `seeds` 和 `rationale`，比较验证均值；不读取测试，也不自动替换主模型。复核分歧的容许差须明确提供，程序不暗设“差 10 分也算一致”。
 
 扩充节律文字用 `expand-text-experiment --database 节律库 --legacy-development 旧development.json --legacy-test 旧test.json --checkpoint 旧模型 --output-dir 新语料目录`，可加 `--supplement 复杂场景.jsonl`。按人及来源分层留出新验证/测试，去除相同文本的冲突评分和数字替换模板；没有明确指标线索的参考分数保留未知，不自动造分。关键词筛选仅是保守的数据过滤，不能证明语义标注正确。原库不修改，排除原因、来源和过滤规则留在导出审计中。
 
@@ -95,6 +103,8 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 | 生成独立真值 | `fit-endpoint` → `endpoints` → `label` · `workflows/endpoints.py` | 先拟合稳定界限，再确认事件，最后给每次预测生成 0/1/未知的离线标签。 |
 | 开发预警模型 | `develop` · `workflows/develop.py` | 主要使用 CPU；拟合参考人群、发现共同波动的指标群组、校准报警门槛，保存冻结 bundle。 |
 | 最终测试与使用 | `validate` → `score` | 在独立人群评估，通过后逐日预测；保持模型与报警状态连续。 |
+
+`compare-warnings` 接收各冻结方法的校准/测试逐日分数，要求完全相同的人、预测时点、标签和监测日历，在同一误报预算下单独校准门槛，再报告灵敏度、误报、提前量和覆盖率。输入分数必须由各方法按当时可见信息产生；该比较器不替调用方认证特征可用性。`plan-window-sensitivity` 只改变预测窗口，禁止同时改变结局定义；改变结局窗口属于另一个研究问题，不能按测试结果挑选。
 
 标签来自独立睡眠、饮食和活动观测，不能用文本预测值或 DNB 分数反过来造标签。各阶段按人隔离，真实输入字段见 [数据接入](data.md)。批量量化时通过 Python 接口复用同一个 `TextPredictor`，避免逐日重新加载底座。
 

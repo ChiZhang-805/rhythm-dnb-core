@@ -7,7 +7,8 @@ DEFAULTS = {'precision': 'auto', 'gradient_checkpointing': True, 'num_workers': 
             'quantization': 'none', 'lora_rank': 16, 'lora_alpha': 32,
             'adam_beta1': 0.9, 'adam_beta2': 0.999, 'adam_epsilon': 1e-8,
             'evidence_loss_weight': 0.1, 'evidence_precision': 0.95, 'evidence_alpha': 0.05,
-            'process_timeout_minutes': 120, 'balance_categories': False}
+            'process_timeout_minutes': 120, 'balance_categories': False,
+            'scope_loss_weight': 0., 'train_experimental_evidence': False, 'require_all_validation_metrics': False}
 
 
 def validate_config(config):
@@ -31,6 +32,10 @@ def validate_config(config):
         raise ValueError('Invalid data-loader/checkpointing settings.')
     if type(config['balance_categories']) is not bool:
         raise ValueError('Category balancing must be explicit boolean.')
+    if any(type(config[k]) is not bool for k in ('train_experimental_evidence', 'require_all_validation_metrics')):
+        raise ValueError('Evidence training and coverage requirements must be explicit booleans.')
+    if type(config['scope_loss_weight']) not in (int, float) or not math.isfinite(config['scope_loss_weight']) or config['scope_loss_weight'] < 0:
+        raise ValueError('Scope loss weight must be finite and nonnegative.')
     if config['device'] not in ('auto', 'cpu', 'cuda') or config['precision'] not in ('auto', 'fp32', 'fp16', 'bf16'):
         raise ValueError('Unsupported device or precision.')
     if config['quantization'] not in ('none', 'nf4') or config['model_id'].startswith('hfl/') and config['quantization'] != 'none':

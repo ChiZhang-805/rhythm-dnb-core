@@ -17,7 +17,8 @@ def implementation_identity():
     # PSEUDOCODE: fingerprint the calculation files independently of checkout path and line endings.
     directory = Path(__file__).parent
     names = ('train.py', 'resume.py', 'model.py', 'dataset.py', 'runtime.py', 'config.py', 'schema.py',
-             'checkpoint.py', 'continuation.py', 'experiment.py')
+             'checkpoint.py', 'continuation.py', 'experiment.py', 'annotations.py', 'labels.py',
+             'review.py', 'evidence.py', 'evaluate.py', 'corpus.py')
     return fingerprint({name: (directory / name).read_text(encoding='utf-8') for name in names})
 
 

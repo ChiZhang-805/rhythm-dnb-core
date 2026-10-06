@@ -14,6 +14,7 @@ from .dataset import ScoreDataset, Collator
 from .evaluate import mean_baseline, median_baseline, report
 from .checkpoint import save_checkpoint, load_checkpoint, load_tokenizer
 from .evidence import calibrate_evidence
+from .schema import METRICS
 
 from .config import validate_config
 from .weights import check_base as _check_base
@@ -22,7 +23,7 @@ from .weights import check_base as _check_base
 def _inputs(batch, device):
     # PSEUDOCODE: move only encoder inputs, keeping labels, category names and weights separate.
     return {k: v.to(device, non_blocking=device.type == 'cuda') for k, v in batch.items()
-            if k not in ('labels', 'categories', 'sample_weights')}
+            if k not in ('labels', 'categories', 'sample_weights', 'evidence_labels', 'scope_labels')}
 
 
 def predict_rows(model, tokenizer, rows, config, device):
@@ -39,8 +40,21 @@ def predict_rows(model, tokenizer, rows, config, device):
             outputs = model(**_inputs(batch, device))
             for index, category in enumerate(batch['categories']):
                 keys = CATEGORIES[category][1]
-                predictions.append({'scores': dict(zip(keys, (outputs[category][index].float().cpu() * 100).tolist())),
-                    'evidence': dict(zip(keys, torch.sigmoid(outputs['_evidence'][category][index].float()).cpu().tolist()))})
+                prediction = {'scores': dict(zip(keys, (outputs[category][index].float().cpu() * 100).tolist())),
+                    'evidence': dict(zip(keys, torch.sigmoid(outputs['_evidence'][category][index].float()).cpu().tolist()))}
+                if '_scope' in outputs:
+                    targets = batch['scope_labels'][index].to(device)
+                    known = torch.isfinite(targets)
+                    if known.any():
+                        logits = outputs['_scope'][index][known].float()
+                        expected = targets[known]
+                        predicted = logits >= 0
+                        prediction['scope'] = {'tokens': int(known.sum()),
+                            'binary_cross_entropy': float(torch.nn.functional.binary_cross_entropy_with_logits(logits, expected)),
+                            'true_positive': int((predicted & expected.bool()).sum()),
+                            'false_positive': int((predicted & ~expected.bool()).sum()),
+                            'false_negative': int((~predicted & expected.bool()).sum())}
+                predictions.append(prediction)
     return predictions
 
 
@@ -64,7 +78,9 @@ def _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, sample_
             with runtime.autocast():
                 outputs = model(**_inputs(batch, runtime.device))
                 losses = regression_loss(outputs, batch['labels'].to(runtime.device), batch['categories'],
-                                         config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'] if learn_evidence else 0.)
+                                         config['huber_delta'], reduction='none', evidence_weight=config['evidence_loss_weight'] if learn_evidence else 0.,
+                                         evidence_labels=batch['evidence_labels'].to(runtime.device),
+                                         scope_labels=batch['scope_labels'].to(runtime.device), scope_weight=config.get('scope_loss_weight', 0))
                 weights = batch['sample_weights'].to(runtime.device)
                 if category_weights:
                     losses = losses * losses.new_tensor([category_weights[c] for c in batch['categories']])
@@ -113,6 +129,10 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     if experimental and not development_only:
         raise ValueError('Experimental runs must keep the sealed test set outside training.')
     purpose = 'experimental_semantic_regression' if experimental else 'full_dataset_finetune'
+    from .review import training_readiness
+    readiness = training_readiness(partitions, config, experimental=experimental)
+    if readiness['blockers']:
+        raise ValueError('Training readiness: ' + '; '.join(readiness['blockers']))
     parent = validate_initialization(initialize_from, partitions, corpus, base_id, config, experimental) if initialize_from else None
     signature = fingerprint({'corpus': corpus['id'], 'base': base_id, 'config': config, 'development_only': development_only,
                              'purpose': purpose, 'initialization': parent})
@@ -129,23 +149,29 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     tokenizer = load_tokenizer(base_path)
-    datasets = {name: ScoreDataset(rows, tokenizer, config['max_length']) for name, rows in partitions.items()}
+    datasets = {name: ScoreDataset(rows, tokenizer, config['max_length'], explicit_evidence_only=experimental) for name, rows in partitions.items()}
     runtime.primary(lambda: output_path.mkdir(parents=True, exist_ok=False))
     runtime.primary(lambda: (output_path / 'execution.json').write_text(canonical_json(execution), encoding='utf-8'))
+    runtime.primary(lambda: (output_path / 'readiness.json').write_text(canonical_json(readiness), encoding='utf-8'))
     if recovered is not None:
         recovered_best = runtime.primary(lambda: carry_best_checkpoint(recovered_best, output_path))
     if initialize_from:
-        core, _, _, _ = load_checkpoint(initialize_from, base_path=base_path, device=runtime.device,
+        core, _, source_manifest, _ = load_checkpoint(initialize_from, base_path=base_path, device=runtime.device,
                                        dtype=runtime.dtype, allow_experimental=experimental, trainable=True)
+        if config.get('scope_loss_weight', 0) > 0 and core.scope_head is None:
+            # The optional head must not change the matched control's dropout/data-loader random stream.
+            with torch.random.fork_rng(devices=[]):
+                core.scope_head = torch.nn.Linear(3 * core.encoder.config.hidden_size, len(METRICS)).to(runtime.device)
     else:
         core = ScoringModel.pretrained(base_path, config['dropout'], config=config, device=runtime.device, dtype=runtime.dtype)
-    if experimental:
+    learn_evidence = not experimental or config.get('train_experimental_evidence', False)
+    if not learn_evidence:
         core.evidence_heads.requires_grad_(False)
     if config['gradient_checkpointing']:
         core.encoder.config.use_cache = False
         core.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     optimizer = torch.optim.AdamW([{'params': [p for p in core.encoder.parameters() if p.requires_grad], 'lr': config['encoder_lr']},
-                                  {'params': list(core.heads.parameters()) + list(core.evidence_heads.parameters()), 'lr': config['head_lr']}],
+                                  {'params': [p for name, p in core.named_parameters() if not name.startswith('encoder.') and p.requires_grad], 'lr': config['head_lr']}],
                                   weight_decay=config['weight_decay'], betas=(config['adam_beta1'], config['adam_beta2']), eps=config['adam_epsilon'])
     model = DistributedDataParallel(core, device_ids=[runtime.device.index] if runtime.device.type == 'cuda' else None,
                                     broadcast_buffers=False) if runtime.world_size > 1 else core
@@ -177,6 +203,8 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
                  'mean_baseline': baseline, 'median_baseline': median_reference, 'epoch': 0,
                  'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False,
                  'selected_validation_mae': best,
+                 'evidence_trained': source_manifest.get('evidence_trained', False),
+                 'scope_trained': source_manifest.get('scope_trained', False),
                  'initialization': parent, 'category_loss_weights': category_weights}, purpose=purpose)))
             runtime.primary(lambda: (output_path / 'initial-validation.json').write_text(canonical_json(initial_validation), encoding='utf-8'))
             if runtime.rank == 0:
@@ -189,7 +217,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
         loader = DataLoader(datasets['train'], batch_sampler=sampler, collate_fn=Collator(tokenizer),
                             num_workers=config['num_workers'], pin_memory=runtime.device.type == 'cuda', **options)
         progress = _epoch(model, loader, optimizer, scheduler, scaler, runtime, config, len(datasets['train']),
-                          learn_evidence=not experimental, category_weights=category_weights)
+                          learn_evidence=learn_evidence, category_weights=category_weights)
         if not progress['optimizer_steps']:
             raise ValueError('Every optimizer step overflowed; no trained checkpoint can be selected.')
         validation = runtime.primary(lambda: report(partitions['validation'],
@@ -205,6 +233,7 @@ def _train(partitions, corpus, base_path, base_id, output_path, config, runtime,
                  'mean_baseline': baseline, 'median_baseline': median_reference, 'epoch': epoch + 1,
                  'selection_metric': 'validation.macro_category_mae', 'test_used_for_selection': False,
                  'initialization': parent, 'category_loss_weights': category_weights,
+                 'evidence_trained': learn_evidence, 'scope_trained': config.get('scope_loss_weight', 0) > 0,
                  'selected_validation_mae': best}, purpose=purpose)))
         else:
             stale += 1

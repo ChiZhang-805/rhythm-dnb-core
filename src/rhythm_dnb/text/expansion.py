@@ -60,6 +60,8 @@ def screen_weak_absence(rows):
             for key, value in list(row['scores'].items()):
                 if value is not None and key in REVIEW_CUES and re.search(REVIEW_CUES[key], row['text']):
                     row['scores'][key] = None
+                    if 'label_states' in row:
+                        row['label_states'] = {**row['label_states'], key: 'disputed'}
                     changes.append({'example_id': row['example_id'], 'metric': key, 'previous_reference': value,
                                     'reason': 'absence_or_normal_state_requires_independent_reference_review'})
         if any(v is not None for v in row['scores'].values()):
@@ -141,6 +143,8 @@ def export_expansion(database, legacy_development, legacy_test, checkpoint, outp
                 'participant_id': 'rhythm:' + record['participant_id'], 'group_id': 'rhythm:' + record['participant_id'],
                 'category': category, 'text': text.strip(), 'scores': scores, 'origin': 'authored_simulation',
                 'annotation_source': REFERENCE, 'source_dataset': record['source_dataset'],
+                'observed_at': record.get('observed_at'),
+                'temporal_basis': 'source_record_timestamp_for_authored_text',
                 'split': roles[record['participant_id']], 'reference_method': 'manual_contextual_rewrite_with_mention_filter'})
     groups = defaultdict(list)
     for row in rows:
@@ -224,10 +228,11 @@ def refine_frozen_corpus(directory, output_dir):
     from .experiment import prepare_development
     prepare_development(dev)
     rows, changes = screen_weak_absence(dev['rows'] + test['rows'])
-    rows, partitions = validate_rows(rows, ('train','validation','test'),categories=manifest['categories'],allow_missing=True)
+    rows, partitions = validate_rows(rows, ('train','validation','test'),categories=manifest.get('categories'),allow_missing=True)
     development = partitions['train'] + partitions['validation']
     refined = {**manifest, 'id': fingerprint(rows), 'development_id': fingerprint(development),
                'test_id': fingerprint(partitions['test']), 'counts': {k:len(v) for k,v in partitions.items()},
+               'origins': dict(Counter(r['origin'] for r in rows)),
                'parent_export_id': manifest['id'], 'reference_review_cues': REVIEW_CUES}
     output.mkdir(parents=True,exist_ok=False)
     for name, items in [('development',development),('test',partitions['test'])]:
@@ -236,3 +241,72 @@ def refine_frozen_corpus(directory, output_dir):
     (output/'reference-review.json').write_text(canonical_json({'parent_export':manifest['id'], 'changes':changes,
         'changed_labels':len(changes),'removed_texts':len(dev['rows'])+len(test['rows'])-len(rows)}),encoding='utf-8')
     return {'counts':refined['counts'],'changed_labels':len(changes),'id':refined['id']}
+
+
+def refresh_source_corpus(directory, database, output_dir):
+    # PSEUDOCODE: read a new source snapshot -> preserve people/roles -> refresh matching authored records and timestamps with an explicit audit.
+    from .experiment import prepare_development
+    from ..provenance import file_hash
+    directory = Path(directory)
+    development = json.loads((directory / 'development.json').read_text(encoding='utf-8'))
+    test = json.loads((directory / 'test.json').read_text(encoding='utf-8'))
+    prepare_development(development)
+    manifest = development['manifest']
+    if test['manifest'] != manifest or fingerprint(test['rows']) != manifest['test_id']:
+        raise ValueError('Source corpus partitions are inconsistent.')
+    digest = file_hash(database)
+    with closing(sqlite3.connect(Path(database).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        db.row_factory = sqlite3.Row
+        db.execute('BEGIN')
+        records = {r['record_id']: dict(r) for r in db.execute('SELECT o.*, r.payload AS raw, p.payload AS provenance FROM observations o '
+                   'JOIN raw_inputs r USING(record_id) JOIN observation_provenance p USING(record_id)')}
+    updated, changes = [], []
+    for original in development['rows'] + test['rows']:
+        row = dict(original)
+        rid = row.get('source_record_id') or ''
+        if not rid.startswith('rhythm:'):
+            updated.append(row)
+            continue
+        source = records.get(rid[len('rhythm:'):])
+        if source is None or row['participant_id'] != 'rhythm:' + source['participant_id']:
+            raise ValueError('Source record or participant changed: ' + rid)
+        raw = json.loads(source['raw'])
+        provenance = json.loads(source['provenance'])
+        category = row['category']
+        text = raw[category + '_description_text'].strip()
+        keys = CATEGORIES[category][1]
+        if any(provenance['provenance'].get('text_' + key, {}).get('method') != 'manual_contextual_rewrite' for key in keys):
+            raise ValueError('Changed reference provenance requires review: ' + rid)
+        scores = {key: source['text_' + key] if re.search(MENTIONS[key], text) else None for key in keys}
+        row.update(text=text, scores=scores, observed_at=source['observed_at'],
+            temporal_basis='source_record_timestamp_for_authored_text',
+            source_time_provenance=provenance['provenance'].get('observed_at'),
+            source_warnings=provenance.get('warnings', []), source_snapshot_sha256=digest)
+        if row.get('scope_targets') and row['text'] != original['text']:
+            raise ValueError('Source text changed under scope offsets; reannotate explicitly.')
+        if row.get('label_states'):
+            raise ValueError('Independent reviewed labels cannot be overwritten by refreshed weak references.')
+        changes.append({'example_id': row['example_id'], 'text_changed': text != original['text'],
+            'reference_changed': scores != original['scores'], 'time_restored': original.get('observed_at') != row['observed_at']})
+        updated.append(row)
+    updated, masked = screen_weak_absence(updated)
+    # A source rewrite may create cross-role duplicates. Reject them; never move holdout rows into training.
+    updated, partitions = validate_rows(updated, ('train', 'validation', 'test'), categories=manifest.get('categories'), allow_missing=True)
+    from .review import coverage_report
+    dev_rows = partitions['train'] + partitions['validation']
+    receipt = {**manifest, 'id': fingerprint(updated), 'development_id': fingerprint(dev_rows), 'test_id': fingerprint(partitions['test']),
+        'counts': {k: len(v) for k, v in partitions.items()}, 'origins': dict(Counter(r['origin'] for r in updated)),
+        'parent_export_id': manifest['id'], 'source_snapshot_sha256': digest,
+        'test_usage': 'development_regression_only_previously_exposed', 'fresh_sealed_test': False,
+        'longitudinal_interpretation': 'authored descriptions aligned to source record times; not observed patient text or verified availability'}
+    if file_hash(database) != digest:
+        raise ValueError('Source database changed during refresh; do not publish an inconsistent export.')
+    output = Path(output_dir); output.mkdir(parents=True, exist_ok=False)
+    for name, rows in (('development', dev_rows), ('test', partitions['test'])):
+        (output / (name + '.json')).write_text(canonical_json({'manifest': receipt, 'rows': rows}), encoding='utf-8')
+    audit = {'manifest': receipt, 'changes': changes, 'masked_references': masked, 'coverage': coverage_report(updated), 'source_unchanged': True}
+    (output / 'audit.json').write_text(canonical_json(audit), encoding='utf-8')
+    (output / 'manifest.json').write_text(canonical_json(receipt), encoding='utf-8')
+    return {'counts': receipt['counts'], 'changed_texts': sum(r['text_changed'] for r in changes),
+            'restored_times': sum(r['time_restored'] for r in changes), 'source_unchanged': True,
+            'fresh_sealed_test': False, 'id': receipt['id']}

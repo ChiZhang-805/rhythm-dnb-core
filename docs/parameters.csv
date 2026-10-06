@@ -75,5 +75,8 @@ adam_beta1,0.9,text/config.py,优化器一阶动量,显式记录AdamW标准起�
 adam_beta2,0.999,text/config.py,优化器二阶动量,与QLoRA原7B实验一致的起点；并非本任务最优证明,仅在开发组比较0.95或0.999,validation_search,https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 adam_epsilon,1e-8,text/config.py,优化器数值保护,AdamW标准分母保护；与DNB epsilon作用不同,检查非有限梯度和溢出；不要据测试成绩调整,validation_search,https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 balance_categories,false,text/config.py,类别损失平衡,启用后各类每轮总权重相等；不重复制造样本,扩充四类文字时防止小类压力被淹没；按验证比较,validation_search,训练目标设计；不保证最优
+scope_loss_weight,0.0,text/config.py,辅助范围监督,默认关闭以保持旧权重结构；启用须有训练与验证的证据片段,用匹配预算的零权重对照和验证误差选择；保留普通文本回归检查,validation_search,任务特定多目标损失；尚无本项目最佳权重证据
+train_experimental_evidence,false,text/config.py,实验依据学习,只在显式正负证据标注齐备时启用；旧空标签不当负例,独立校准之前正式scores仍为空,measurement_contract,缺失标注与语义无依据必须分开
+require_all_validation_metrics,true,text/config.py,完整验证门槛,主配置开启；库默认false兼容历史局部实验并记录覆盖警告,缺少任一训练或验证指标即阻断而不是改平均分掩盖,measurement_contract,17项逐指标验证；数量不等于独立证据
 maximum_text_characters,10000,text/schema.py,输入资源保护,应用输入上限；真正模型上限由token计数决定,根据服务容量调整；不静默截断,hardware,接口保护约定；不代表预测性能参数
 kernel_min_samples,9,dnb/single_sample.py,底层兼容门槛,低层数值接口历史保护；正式参考仍至少100人,不能用该低层门槛绕过研究级人数要求,hardware,接口保护约定；不代表预测性能参数

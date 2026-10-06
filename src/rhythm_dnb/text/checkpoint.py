@@ -77,7 +77,8 @@ def load_checkpoint(folder, *, base_path=None, device='cpu', dtype=None, allow_e
             raise ValueError('Adapter checkpoint has incorrect score/evidence heads.')
         model.load_state_dict(heads, strict=False)
     else:
-        model = ScoringModel.from_config(folder / 'encoder', manifest['config']['dropout'])
+        model = ScoringModel.from_config(folder / 'encoder', manifest['config']['dropout'],
+                                        scope_supervision=manifest['config'].get('scope_loss_weight', 0) > 0)
         model.load_state_dict(load_file(str(folder / 'model.safetensors')), strict=True)
         model.to(target)
     tokenizer = load_tokenizer(folder / 'tokenizer')

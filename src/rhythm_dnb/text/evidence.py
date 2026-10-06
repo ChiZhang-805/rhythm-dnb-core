@@ -4,6 +4,7 @@ import math
 from hashlib import sha256
 from itertools import groupby
 from .schema import METRICS
+from .labels import evidence_target
 
 METHOD = 'validation_threshold_independent_people_exact_bonferroni'
 
@@ -14,13 +15,16 @@ def _person_pairs(rows, predictions, key):
     for row, prediction in zip(rows, predictions):
         if key not in row['scores']:
             continue
+        target = evidence_target(row, key)
+        if target is None:
+            continue
         value = prediction['evidence'][key]
         if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
             raise ValueError('Invalid evidence probability.')
         order = sha256((key + '\0' + row['example_id']).encode()).hexdigest()
         person = row['participant_id']
         if person not in chosen or order < chosen[person][0]:
-            chosen[person] = (order, value, row['scores'][key] is not None)
+            chosen[person] = (order, value, bool(target))
     return [(value, known) for _, value, known in chosen.values()]
 
 

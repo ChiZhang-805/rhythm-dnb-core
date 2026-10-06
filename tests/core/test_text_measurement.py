@@ -50,6 +50,7 @@ def qwen_fixture(root):
                 rows.append({'example_id': identity, 'participant_id': identity, 'group_id': identity,
                     'split': split, 'category': category, 'text': '今天的记录' + identity,
                     'scores': {key: float(20 + index * 10) if known else None for index, key in enumerate(keys)},
+                    'label_states': {key: 'supported' if known else 'insufficient_evidence' for key in keys},
                     'origin': 'observed', 'review_status': 'accepted', 'annotation_evidence_id': 'software-test-only'})
     return base, config, rows
 
@@ -111,7 +112,8 @@ class TextMeasurementTests(unittest.TestCase):
     def test_unknown_intensity_is_masked_but_evidence_learns(self):
         outputs = {c: torch.full((1, len(keys)), .4, requires_grad=True) for c, (_, keys) in CATEGORIES.items()}
         outputs['_evidence'] = {c: torch.zeros((1, len(keys)), requires_grad=True) for c, (_, keys) in CATEGORIES.items()}
-        loss = regression_loss(outputs, torch.full((1, len(METRICS)), float('nan')), ['stress'])
+        loss = regression_loss(outputs, torch.full((1, len(METRICS)), float('nan')), ['stress'],
+                               evidence_labels=torch.zeros((1, len(METRICS))))
         loss.backward()
         self.assertTrue(torch.isfinite(loss))
         self.assertEqual(outputs['stress'].grad.item(), 0)
@@ -119,7 +121,8 @@ class TextMeasurementTests(unittest.TestCase):
 
     def test_evidence_cutoff_comes_from_separate_data_and_can_fail(self):
         key = 'stress_intensity'
-        rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: score}}
+        rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: score},
+                 'label_states': {key: 'supported' if score is not None else 'insufficient_evidence'}}
                 for i, score in enumerate((None, None, 30., 70.))]
         predictions = [{'evidence': {key: value}} for value in (.1, .6, .7, .9)]
         calibration = [{'example_id': 'c' + str(i), 'participant_id': 'c' + str(i), 'scores': {key: 50.}} for i in range(114)]
@@ -139,6 +142,7 @@ class TextMeasurementTests(unittest.TestCase):
         self.assertEqual(failed['thresholds'][key]['candidate_threshold'], .7)
         # Calibration failures cannot be repaired by searching a new cutoff on the same people.
         calibration[0]['scores'][key] = None
+        calibration[0]['label_states'] = {key: 'insufficient_evidence'}
         failed = calibrate_evidence(calibration, calibration_predictions, **options)
         self.assertIsNone(failed['thresholds'][key]['threshold'])
         self.assertEqual(failed['thresholds'][key]['candidate_threshold'], .7)
@@ -166,7 +170,8 @@ class TextMeasurementTests(unittest.TestCase):
         examples = [[(.9, True), (.8, False), (.7, True), (.7, True), (.5, False)]]
         examples += [list(zip(rng.integers(0, 11, 80) / 10, rng.integers(0, 2, 80).astype(bool))) for _ in range(25)]
         for pairs in examples:
-            rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: 50. if known else None}}
+            rows = [{'example_id': str(i), 'participant_id': str(i), 'scores': {key: 50. if known else None},
+                     'label_states': {key: 'supported' if known else 'insufficient_evidence'}}
                     for i, (_, known) in enumerate(pairs)]
             predictions = [{'evidence': {key: float(value)}} for value, _ in pairs]
             expected = None

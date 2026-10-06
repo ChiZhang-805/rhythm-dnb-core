@@ -84,16 +84,37 @@ def main(argv=None):
     expand.add_argument('--supplement', help='Reviewed authored complex training examples in JSON Lines format')
     review = sub.add_parser('review-text-experiment', help='Screen doubtful weak references in an existing frozen export')
     review.add_argument('--corpus-dir', required=True); review.add_argument('--output-dir', required=True)
+    refresh = sub.add_parser('refresh-text-source', help='Read refreshed authored references and preserve source times without reopening an old test')
+    refresh.add_argument('--corpus-dir', required=True); refresh.add_argument('--database', required=True); refresh.add_argument('--output-dir', required=True)
+    coverage = sub.add_parser('audit-text', help='Report reference coverage and evidence states for every metric')
+    coverage.add_argument('--corpus', required=True); coverage.add_argument('--output', required=True)
+    blind = sub.add_parser('prepare-text-review', help='Prepare two blinded independent annotation packets')
+    blind.add_argument('--corpus', required=True); blind.add_argument('--output-dir', required=True)
+    blind.add_argument('--per-metric', type=int, required=True); blind.add_argument('--seed', type=int, required=True)
+    adjudicate = sub.add_parser('compare-text-reviews', help='Compare completed independent reviews without averaging or writing labels')
+    adjudicate.add_argument('--coordinator', required=True); adjudicate.add_argument('--first', required=True); adjudicate.add_argument('--second', required=True)
+    adjudicate.add_argument('--tolerance', type=float, required=True); adjudicate.add_argument('--output', required=True)
+    seal = sub.add_parser('seal-text-experiment', help='Seal all-metric train/validation/test data excluding previous holdout exposure')
+    seal.add_argument('--corpus', required=True); seal.add_argument('--exposed', required=True); seal.add_argument('--output-dir', required=True)
+    seal.add_argument('--initial-checkpoint-id')
+    comparison = sub.add_parser('compare-warnings', help='Calibrate and test frozen methods on identical people, outcomes and calendars')
+    comparison.add_argument('--input', required=True); comparison.add_argument('--study', required=True); comparison.add_argument('--output', required=True)
+    sensitivity = sub.add_parser('plan-window-sensitivity', help='Prespecify predictor windows without changing the target event')
+    sensitivity.add_argument('--study', required=True); sensitivity.add_argument('--candidates', required=True); sensitivity.add_argument('--output', required=True)
     train_experiment = sub.add_parser('train-text-experiment', help='Train only on the experimental development partition')
     train_experiment.add_argument('--corpus', required=True); train_experiment.add_argument('--base', required=True)
     train_experiment.add_argument('--config', required=True); train_experiment.add_argument('--output-dir', required=True)
     train_experiment.add_argument('--save-resume-state', action='store_true')
     train_experiment.add_argument('--resume-state')
     train_experiment.add_argument('--initialize-from', help='Start a new data stage from an experimental checkpoint')
+    text_study = sub.add_parser('study-text', help='Run a prespecified repeated experiment without reading test data')
+    text_study.add_argument('--corpus', required=True); text_study.add_argument('--protocol', required=True)
+    text_study.add_argument('--base', required=True); text_study.add_argument('--output-dir', required=True); text_study.add_argument('--initialize-from')
     evaluate_experiment = sub.add_parser('evaluate-text-experiment', help='Evaluate a chosen experimental model on its sealed test set')
     evaluate_experiment.add_argument('--corpus', required=True); evaluate_experiment.add_argument('--base', required=True)
     evaluate_experiment.add_argument('--checkpoint', required=True); evaluate_experiment.add_argument('--output-dir', required=True)
     evaluate_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
+    evaluate_experiment.add_argument('--regression-only', action='store_true', help='Explicitly mark a previously inspected test as a development check')
     score_experiment = sub.add_parser('score-text-experiment', help='Return experimental reference estimates; not a calibrated DNB input')
     score_experiment.add_argument('--checkpoint', required=True); score_experiment.add_argument('--base', required=True)
     score_experiment.add_argument('--category', required=True); score_experiment.add_argument('--text', required=True)
@@ -205,6 +226,47 @@ def main(argv=None):
     elif args.command == 'review-text-experiment':
         from .text.expansion import refine_frozen_corpus
         print(canonical_json(refine_frozen_corpus(args.corpus_dir,args.output_dir))); return 0
+    elif args.command == 'refresh-text-source':
+        from .text.expansion import refresh_source_corpus
+        print(canonical_json(refresh_source_corpus(args.corpus_dir, args.database, args.output_dir))); return 0
+    elif args.command == 'audit-text':
+        from .text.review import coverage_report
+        result = coverage_report(_read(args.corpus)['rows'])
+    elif args.command == 'prepare-text-review':
+        from .text.review import export_blind_review
+        print(canonical_json(export_blind_review(_read(args.corpus)['rows'], args.output_dir, per_metric=args.per_metric, seed=args.seed))); return 0
+    elif args.command == 'compare-text-reviews':
+        from .text.review import compare_blind_review
+        result = compare_blind_review(_read(args.coordinator), _read(args.first), _read(args.second), tolerance=args.tolerance)
+    elif args.command == 'seal-text-experiment':
+        from .text.experiment import seal_experiment
+        print(canonical_json(seal_experiment(_read(args.corpus)['rows'], _read(args.exposed)['rows'], args.output_dir,
+            initial_checkpoint_id=args.initial_checkpoint_id))); return 0
+    elif args.command == 'compare-warnings':
+        from .config import load_study
+        from .contracts import EvaluationDay
+        from .research.comparison import compare_methods
+        payload = _read(args.input)
+        methods = {}
+        for name, partitions in payload['methods'].items():
+            methods[name] = {}
+            for role, records in partitions.items():
+                decoded = []
+                for record in records:
+                    record = dict(record)
+                    for key in ('issued_at', 'onset', 'label_available_at'):
+                        if record.get(key) is not None:
+                            record[key] = datetime.fromisoformat(record[key])
+                    decoded.append(EvaluationDay(**record))
+                methods[name][role] = decoded
+        result = compare_methods(methods, calibration_events=_events(payload['calibration_events']), test_events=_events(payload['test_events']),
+            calibration_monitoring=_monitoring(payload['calibration_monitoring']), test_monitoring=_monitoring(payload['test_monitoring']),
+            calibration_cutoff=payload['calibration_cutoff'], evaluation_as_of=payload['evaluation_as_of'],
+            config=load_study(args.study), fitted_people=payload['fitted_people'], bootstrap_repetitions=payload.get('bootstrap_repetitions', 0))
+    elif args.command == 'plan-window-sensitivity':
+        from .config import load_study
+        from .research.comparison import window_sensitivity
+        result = window_sensitivity(load_study(args.study), _read(args.candidates))
     elif args.command == 'train-text-experiment':
         from .text.experiment import train_experiment as fit_experiment
         result = fit_experiment(_read(args.corpus), args.base, args.output_dir, _read(args.config),
@@ -213,9 +275,13 @@ def main(argv=None):
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_mae': result['validation_mae']}))
         return 0
+    elif args.command == 'study-text':
+        from .text.study import run_text_study
+        print(canonical_json(run_text_study(_read(args.corpus), _read(args.protocol), args.base, args.output_dir,
+                                         initialize_from=args.initialize_from))); return 0
     elif args.command == 'evaluate-text-experiment':
         from .text.experiment import evaluate_experiment as evaluate_text
-        result = evaluate_text(_read(args.corpus), args.checkpoint, args.base, args.output_dir, device=args.device)
+        result = evaluate_text(_read(args.corpus), args.checkpoint, args.base, args.output_dir, device=args.device, regression_only=args.regression_only)
         print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']})); return 0
     elif args.command == 'score-text-experiment':
         from .text.predict import TextPredictor
