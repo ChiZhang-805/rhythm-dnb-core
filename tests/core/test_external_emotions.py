@@ -6,6 +6,17 @@ from rhythm_dnb.text.external import ordinal_emotion_report
 
 
 class ExternalEmotionTests(unittest.TestCase):
+    def test_perfect_presence_does_not_imply_correct_intensity_ordering(self):
+        labels = [0, 0, 0, 1, 2, 3]
+        scores = [0., 0., 0., 90., 60., 30.]
+        rows = [{'example_id': str(i), 'category': 'emotion', 'external_scale': 'ordinal_0_3',
+                 'external_reference': {'joy': value, 'sadness': value}} for i, value in enumerate(labels)]
+        predictions = [{'scores': {'joy_intensity': value, 'sadness_intensity': value}} for value in scores]
+        for metric in ordinal_emotion_report(rows, predictions)['metrics'].values():
+            self.assertEqual(metric['presence_roc_auc'], 1.)
+            self.assertEqual(metric['positive_intensity']['n'], 3)
+            self.assertEqual(metric['positive_intensity']['spearman'], -1.)
+
     def test_ordering_imbalance_and_no_clinical_scale_conversion(self):
         rows = [{'example_id': str(i), 'category': 'emotion', 'external_scale': 'ordinal_0_3',
                  'external_reference': {'joy': i, 'sadness': 3-i}} for i in range(4)]
@@ -29,3 +40,5 @@ class ExternalEmotionTests(unittest.TestCase):
         report = ordinal_emotion_report(rows, predictions)
         for metric in report['metrics'].values():
             self.assertIsNone(metric['spearman']); self.assertIsNone(metric['presence_average_precision'])
+            self.assertEqual(metric['positive_intensity']['n'], 0)
+            self.assertIsNone(metric['positive_intensity']['spearman'])

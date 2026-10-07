@@ -26,6 +26,7 @@ def ordinal_emotion_report(rows, predictions):
         scores = np.asarray([p['scores'][key] for p in predictions])
         nonconstant = len(set(truth)) > 1 and len(set(scores)) > 1
         presence = truth > 0
+        positive_nonconstant = len(set(truth[presence])) > 1 and len(set(scores[presence])) > 1
         levels = {}
         for level in range(4):
             selected = scores[truth == level]
@@ -37,7 +38,10 @@ def ordinal_emotion_report(rows, predictions):
             'kendall_tau_b': float(kendalltau(truth, scores).statistic) if nonconstant else None,
             'presence_roc_auc': float(roc_auc_score(presence, scores)) if len(set(presence)) == 2 else None,
             'presence_average_precision': float(average_precision_score(presence, scores)) if len(set(presence)) == 2 else None,
-            'presence_prevalence': float(presence.mean())}
+            'presence_prevalence': float(presence.mean()),
+            'positive_intensity': {'n': int(presence.sum()),
+                'spearman': float(spearmanr(truth[presence], scores[presence]).statistic) if positive_nonconstant else None,
+                'pearson': float(pearsonr(truth[presence], scores[presence]).statistic) if positive_nonconstant else None}}
     return {'metrics': result, 'rows': len(rows), 'mapping': MAPPING, 'scale_conversion': None,
             'clinical_accuracy': None, 'evidence_calibration': None,
             'interpretation': 'external perceived-emotion ranking diagnostic; ordinal labels are not 0-100 personal clinical scores',
