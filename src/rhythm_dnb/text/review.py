@@ -24,6 +24,28 @@ def review_guide():
         'intervals_are_not_clinical_cutoffs': True, 'independent_review_completed': False}
 
 
+def evidence_support_coverage(rows):
+    # PSEUDOCODE: count jointly known support patterns; warn when balanced individual heads hide missing partial-information cases.
+    partitions, warnings = {}, []
+    for role in sorted({r['split'] for r in rows}):
+        categories = {}
+        for category, (_, keys) in CATEGORIES.items():
+            selected = [r for r in rows if r['split'] == role and r['category'] == category]
+            if not selected:
+                continue
+            patterns = Counter(''.join('?' if evidence_target(r, k) is None else str(int(evidence_target(r, k))) for k in keys) for r in selected)
+            mixed = sum(n for pattern, n in patterns.items() if '0' in pattern and '1' in pattern)
+            categories[category] = {'metric_order': list(keys), 'rows': len(selected), 'patterns': dict(sorted(patterns.items())),
+                'mixed_support_rows': mixed, 'multiple_supported_rows': sum(n for p, n in patterns.items() if p.count('1') > 1),
+                'all_targets_explicit_rows': sum(n for p, n in patterns.items() if '?' not in p)}
+            if len(keys) > 1 and mixed == 0:
+                warnings.append(role + '/' + category + ': no row explicitly distinguishes supported from unsupported category metrics')
+        partitions[role] = categories
+    return {'partitions': partitions, 'warnings': warnings,
+            'pattern_legend': {'1': 'supported including explicit symptom absence', '0': 'insufficient evidence', '?': 'unreviewed or disputed'},
+            'semantic_validity_certified': False}
+
+
 def coverage_report(rows):
     # PSEUDOCODE: count each metric, reference range, evidence state and time basis separately in every role.
     roles = sorted({r['split'] for r in rows})
@@ -47,7 +69,7 @@ def coverage_report(rows):
             'timestamped': sum(r.get('observed_at') is not None for r in items),
             'time_bases': dict(Counter(r.get('temporal_basis', 'unspecified') for r in items)),
             'scope_rows': sum(bool(r.get('scope_targets')) for r in items)}
-    return {'partitions': report, 'id': fingerprint(rows),
+    return {'partitions': report, 'id': fingerprint(rows), 'joint_evidence_coverage': evidence_support_coverage(rows),
             'score_band_definition': '[0,20),[20,40),[40,60),[60,80),[80,100]; descriptive only, not clinical cutoffs',
             'semantic_validity_certified': False}
 

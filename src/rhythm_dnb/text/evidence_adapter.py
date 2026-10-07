@@ -67,7 +67,9 @@ def prepare_evidence(payload):
             if set(labels) != {0., 1.}:
                 raise ValueError(role + ': both evidence classes required for ' + metric)
             counts[role][metric] = {'positive': int(sum(labels)), 'negative': len(labels) - int(sum(labels))}
+    from .review import evidence_support_coverage
     corpus = {'id': payload['id'], 'initial_checkpoint_id': payload['initial_checkpoint_id'], 'counts': counts,
+              'joint_evidence_coverage': evidence_support_coverage(rows),
               'development_groups': {key: sorted({r[key] for r in rows if r.get(key)})
                                      for key in ('group_id', 'participant_id', 'family_id')},
               'development_text_hashes': sorted({fingerprint(''.join(r['text'].split())) for r in rows}),

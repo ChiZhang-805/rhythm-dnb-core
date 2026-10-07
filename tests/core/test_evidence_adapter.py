@@ -25,6 +25,22 @@ def evidence_fixture(parent, roles=('train', 'validation')):
 
 
 class EvidenceAdapterTests(unittest.TestCase):
+    def test_individually_balanced_heads_do_not_hide_missing_partial_evidence(self):
+        from rhythm_dnb.text.review import evidence_support_coverage
+        rows = evidence_fixture('parent')['rows']
+        coverage = evidence_support_coverage(rows)
+        self.assertEqual(coverage['partitions']['train']['sleep']['mixed_support_rows'], 0)
+        self.assertTrue(any('train/sleep' in warning for warning in coverage['warnings']))
+        partial = copy.deepcopy(next(r for r in rows if r['split'] == 'train' and r['category'] == 'sleep'))
+        partial['label_states']['sleep_onset_difficulty'] = 'explicit_absence'
+        partial['scores']['sleep_onset_difficulty'] = 0.
+        partial['label_states']['post_sleep_fatigue'] = 'unreviewed'
+        coverage = evidence_support_coverage([*rows, partial])
+        sleep = coverage['partitions']['train']['sleep']
+        self.assertEqual(sleep['mixed_support_rows'], 1)
+        self.assertEqual(sleep['patterns']['010?'], 1)
+        self.assertFalse(any('train/sleep' in warning for warning in coverage['warnings']))
+
     def test_protocol_rejects_scores_missing_classes_test_and_tampering(self):
         payload = evidence_fixture('parent')
         prepare_evidence(payload)
