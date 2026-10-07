@@ -69,8 +69,11 @@ def sample_network(sample, reference, feature_names, *, deviation_quantile=.75, 
         raise ValueError('A complete target sample is required.')
     x = x[order]
     _, corr = _statistics(rows, reference=True)
-    delta = np.corrcoef(np.vstack((rows, x)), rowvar=False) - corr
-    deviation = np.abs(x - rows.mean(axis=0))
+    with np.errstate(over='ignore', invalid='ignore', divide='ignore', under='ignore'):
+        delta = np.corrcoef(np.vstack((rows, x)), rowvar=False) - corr
+        deviation = np.abs(x - rows.mean(axis=0))
+    if not np.isfinite(delta).all() or not np.isfinite(deviation).all():
+        raise _DataError('nonfinite_sample_statistics')
     selected = np.flatnonzero(deviation >= np.quantile(deviation, deviation_quantile))
     edges = []
     for offset, i in enumerate(selected):

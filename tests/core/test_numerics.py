@@ -98,3 +98,12 @@ class NumericsTests(unittest.TestCase):
         self.assertTrue(all(e['q'] >= e['p'] - 1e-12 for e in result['edges']))
         modules = discover_sample_modules([7, -7, 6, 0, 0], self.x, self.names, deviation_quantile=.3)
         self.assertIn('best', modules)
+
+    def test_exploration_rejects_covariance_overflow_like_primary_sdnb(self):
+        target = [1e308, -1e308, 1e308, 0., 0.]
+        primary = sdnb_components(target, self.x, self.names, ('a', 'b'))
+        self.assertEqual(primary['reason'], 'nonfinite_sample_statistics')
+        for method in (sample_network, discover_sample_modules):
+            with self.subTest(method=method.__name__), self.assertRaisesRegex(ValueError, 'nonfinite_sample_statistics'):
+                method(target, self.x, self.names)
+        np.testing.assert_array_equal(self.x, np.random.default_rng(77).normal(size=(60, 5)))
