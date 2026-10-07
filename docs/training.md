@@ -80,6 +80,10 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 双人复核可用 `export-review-sheet --packet rater-A.json --output rater-A.xlsx` 导出空表，填完后用 `import-review-sheet --packet rater-A.json --workbook rater-A.xlsx --output completed-A.json` 导入。两人分别填写各自的 A/B 表，再交给 `compare-text-reviews`；工具检查身份声明和原文依据，不替人完成复核。
 
+当冻结表示上的依据分类器无法区分复杂对话时，可用 `train-evidence-adapter --corpus development.json --checkpoint 原评分模型 --base 基模 --config 配置.json --output-dir 新训练目录` 单独学习上下文。它只接收显式依据标签，全部程度分数必须为空，17 项在训练和验证中均须有正负例；配置要求 `evidence_loss_weight=1`、`scope_loss_weight=0`、`train_experimental_evidence=true`。使用 `research,text,quantized` 依赖。
+
+该流程按验证集各指标平均 log loss 选轮次，封存检查用 `evaluate-evidence-adapter`。独立依据模型不能直接用来打程度分；只能通过 `score-text-experiment --evidence-checkpoint 依据模型` 与其绑定的原评分模型配合。原评分不变，未独立校准时仍不放行正式分数。新训练目录保留每次改善的检查点；此入口尚不支持优化器断点续训。
+
 ## 文本训练之后怎么走
 
 自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选轮次。锁定模型后才运行 `evaluate-text-experiment`；已查看的测试只能加 `--regression-only` 作开发检查。`score-text-experiment` 把原始 0–100 分放在 `estimates`，未校准的 `scores` 保留为空；实验权重不能默认接入正式 DNB。

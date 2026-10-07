@@ -45,7 +45,7 @@ def fit_baselines(x, y, people, *, seed=20261001, folds=5):
 def deviation_and_trend(window):
     # PSEUDOCODE: summarize fixed-reference z values with level, absolute deviation and per-day slope.
     x = np.asarray(window, dtype=float)
-    if x.ndim != 2 or len(x) < 2:
+    if x.ndim != 2 or len(x) < 2 or x.shape[1] == 0 or np.isinf(x).any():
         raise ValueError('A daily feature matrix is required.')
     result = []
     for j in range(x.shape[1]):

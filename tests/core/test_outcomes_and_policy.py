@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 import unittest
-from rhythm_dnb.contracts import OutcomeAssessment, OutcomeEvent, AlarmState, EvaluationDay
+from rhythm_dnb.contracts import OutcomeAssessment, OutcomeEvent, AlarmState, EvaluationDay, MonitoringPeriod
 from rhythm_dnb.outcomes.criteria import personal_anchor, fit_criteria, assess_day, weighted_quantile
 from rhythm_dnb.outcomes.events import detect_events
 from rhythm_dnb.outcomes.labels import future_label
@@ -115,3 +115,20 @@ class PolicyTests(unittest.TestCase):
         result = event_metrics([], 2, events=[event])
         self.assertEqual(result['event_sensitivity'], 0)
         self.assertEqual(result['events'], 1)
+
+    def test_registry_cannot_inflate_monitoring_cohort_with_unregistered_people(self):
+        from rhythm_dnb.research.calibrate import calibrate
+        from rhythm_dnb.config import StudyConfig
+        t = datetime(2025, 1, 1, 12, tzinfo=UTC)
+        event = OutcomeEvent('outside', t + timedelta(days=5), t + timedelta(days=7))
+        calendar = [MonitoringPeriod('inside', t.date(), t.date()+timedelta(days=2), 'UTC')]
+        with self.assertRaisesRegex(ValueError, 'outside the registered'):
+            event_metrics([], 2., events=[event], monitoring=iter(calendar))
+        with self.assertRaisesRegex(ValueError, 'outside the registered'):
+            calibrate([], StudyConfig(), {'people': [], 'id': 'r'}, {'people': [], 'id': 'd', 'modules': []},
+                      t+timedelta(days=30), events=[event], monitoring=calendar)
+        inside = replace(event, participant_id='inside')
+        result = event_metrics([], 2., events=[inside], monitoring=iter(calendar))
+        self.assertEqual(result['events'], 1)
+        self.assertEqual(result['score_coverage'], 0.)
+        self.assertEqual(result['event_sensitivity'], 0.)

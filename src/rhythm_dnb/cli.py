@@ -125,6 +125,7 @@ def main(argv=None):
     score_experiment.add_argument('--output', required=True)
     score_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
     score_experiment.add_argument('--guard', help='Optional separate experimental evidence guard bound to this checkpoint')
+    score_experiment.add_argument('--evidence-checkpoint', help='Optional context evidence adapter bound to this scoring checkpoint')
     features = sub.add_parser('extract-text-features', help='Cache frozen representations without modifying intensity weights')
     features.add_argument('--corpus', required=True); features.add_argument('--checkpoint', required=True)
     features.add_argument('--base', required=True); features.add_argument('--output-dir', required=True)
@@ -135,6 +136,15 @@ def main(argv=None):
     guard_test = sub.add_parser('evaluate-text-guard', help='Evaluate frozen experimental guard on a separate sealed test')
     guard_test.add_argument('--cache', required=True); guard_test.add_argument('--guard', required=True); guard_test.add_argument('--output-dir', required=True)
     guard_test.add_argument('--regression-only', action='store_true', help='Mark previously exposed cases as a development regression')
+    evidence_fit = sub.add_parser('train-evidence-adapter', help='Train a separate evidence-only encoder using train/validation')
+    evidence_fit.add_argument('--corpus', required=True); evidence_fit.add_argument('--checkpoint', required=True)
+    evidence_fit.add_argument('--base', required=True); evidence_fit.add_argument('--config', required=True)
+    evidence_fit.add_argument('--output-dir', required=True)
+    evidence_test = sub.add_parser('evaluate-evidence-adapter', help='Evaluate fixed evidence thresholds on separate diagnostic cases')
+    evidence_test.add_argument('--corpus', required=True); evidence_test.add_argument('--checkpoint', required=True)
+    evidence_test.add_argument('--base', required=True); evidence_test.add_argument('--output-dir', required=True)
+    evidence_test.add_argument('--device', choices=('auto','cpu','cuda'), default='cuda')
+    evidence_test.add_argument('--regression-only', action='store_true')
     args = parser.parse_args(argv)
     if args.command == 'hardware':
         from .text.runtime import hardware_report
@@ -306,7 +316,8 @@ def main(argv=None):
         print(canonical_json({'checkpoint': result['best_checkpoint'], 'test': result['test']})); return 0
     elif args.command == 'score-text-experiment':
         from .text.predict import TextPredictor
-        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True, guard_dir=args.guard).predict(args.category, args.text)
+        result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True,
+            guard_dir=args.guard, evidence_checkpoint=args.evidence_checkpoint).predict(args.category, args.text)
     elif args.command == 'extract-text-features':
         from .text.features import extract_features
         print(canonical_json(extract_features(_read(args.corpus)['rows'], args.checkpoint, args.base, args.output_dir,
@@ -318,5 +329,15 @@ def main(argv=None):
     elif args.command == 'evaluate-text-guard':
         from .text.guard import evaluate_guard
         print(canonical_json(evaluate_guard(args.cache, args.guard, args.output_dir, regression_only=args.regression_only))); return 0
+    elif args.command == 'train-evidence-adapter':
+        from .text.evidence_adapter import train_evidence
+        result = train_evidence(_read(args.corpus), args.checkpoint, args.base, args.output_dir, _read(args.config))
+        if int(os.environ.get('RANK', '0')) == 0:
+            print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_log_loss': result['validation_log_loss']}))
+        return 0
+    elif args.command == 'evaluate-evidence-adapter':
+        from .text.evidence_adapter import evaluate_evidence
+        print(canonical_json(evaluate_evidence(_read(args.corpus), args.checkpoint, args.base, args.output_dir,
+            device=args.device, regression_only=args.regression_only))); return 0
     save_report(result, args.output)
     print(canonical_json({'output': args.output})); return 0

@@ -47,6 +47,7 @@ def include_monitoring_days(rows, monitoring):
 
 def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=None, horizon_days=7, min_lead_hours=24, confirmation_days=2, monitoring=None):
     # PSEUDOCODE: count unique events -> match positive alarms -> count false and unevaluable alarms.
+    monitoring = tuple(monitoring) if monitoring is not None else None
     rows = include_monitoring_days(rows, monitoring) if monitoring is not None else rows
     sequence = replay(rows, threshold, consecutive=consecutive, cooldown_days=cooldown_days)
     if events is not None:
@@ -54,6 +55,8 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
         keys = [(e.participant_id, instant(e.onset)) for e in events]
         if len(set(keys)) != len(keys) or any(instant(e.confirmed_at) < instant(e.onset) for e in events):
             raise ValueError('Invalid or duplicate registry events.')
+        if monitoring is not None and {e.participant_id for e in events} - {p.participant_id for p in monitoring}:
+            raise ValueError('Event registry contains people outside the registered monitoring cohort.')
     for row, _, _ in sequence:
         if row.label_available_at is not None and row.label is not None:
             required = instant(row.onset) if row.label == 1 else instant(row.issued_at) + timedelta(days=horizon_days + confirmation_days)

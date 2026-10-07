@@ -7,11 +7,15 @@ from .panel import CLOCKS
 def circular_summary(values, *, period=24., minimum=1):
     """Return circular mean and circular SD in the input unit; undefined for R≈0."""
     # PSEUDOCODE: retain finite values -> map to unit circle -> convert resultant to SD.
+    if type(minimum) is not int or minimum < 1 or type(period) not in (int, float) or not np.isfinite(period) or period <= 0:
+        raise ValueError('Circular summary needs a finite positive period and positive integer minimum.')
     x = np.asarray(values, dtype=float)
+    if x.ndim != 1 or np.isinf(x).any():
+        raise ValueError('Circular observations must be a one-dimensional series without infinities.')
     x = x[np.isfinite(x)]
-    if len(x) < minimum or period <= 0:
+    if len(x) < minimum:
         return None, None
-    angles = x * 2 * np.pi / period
+    angles = (x % period) / period * (2 * np.pi)
     vector = np.mean(np.exp(1j * angles))
     length = abs(vector)
     if length <= 1e-12:

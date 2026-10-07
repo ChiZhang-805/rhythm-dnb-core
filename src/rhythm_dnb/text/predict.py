@@ -9,7 +9,7 @@ from .evidence import qualified_scores
 
 
 class TextPredictor:
-    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False, guard_dir=None):
+    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False, guard_dir=None, evidence_checkpoint=None):
         # PSEUDOCODE: inspect a caller-selected local checkpoint; defer accelerator allocation until inference.
         self.checkpoint = checkpoint
         self.manifest, self.model_identity = inspect_checkpoint(checkpoint, allow_experimental=allow_experimental)
@@ -19,6 +19,14 @@ class TextPredictor:
         self._loaded = False
         self._lock = threading.Lock()
         self.guard = None
+        self.evidence_adapter = None
+        if guard_dir is not None and evidence_checkpoint is not None:
+            raise ValueError('Select one experimental evidence method at a time.')
+        if evidence_checkpoint is not None:
+            from .evidence_adapter import EvidenceAdapter
+            if not allow_experimental or self.manifest['purpose'] != 'experimental_semantic_regression':
+                raise ValueError('An experimental adapter cannot qualify formal DNB inputs.')
+            self.evidence_adapter = EvidenceAdapter(evidence_checkpoint, self.model_identity, base_path, device)
         if guard_dir is not None:
             from .guard import EvidenceGuard
             if not allow_experimental or self.manifest['purpose'] != 'experimental_semantic_regression':
@@ -56,6 +64,8 @@ class TextPredictor:
                         'experimental_acceptance': {k: self.guard.manifest['heads'][k]['threshold'] is not None and
                             bool(v[0] >= self.guard.manifest['heads'][k]['threshold']) for k, v in probabilities.items()},
                         'acceptance_certified': False}
+                elif self.evidence_adapter is not None:
+                    diagnostic = self.evidence_adapter.predict(category, text)
                 return {**diagnostic, 'category': category, 'scores': {k: None for k in estimates}, 'normalized': {k: None for k in estimates},
                         'estimates': estimates, 'reasons': {k: 'uncalibrated_experimental_text_evidence' for k in estimates},
                         'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),

@@ -50,6 +50,8 @@ def daily_activity(hourly, wear_minutes=None, *, minimum_hour_wear=45., minimum_
 def activity_regularity(days, minimum=6):
     """A1=1-IS; IS=n*sum_h(mean_h-mean)^2/(24*sum_t(x_t-mean)^2)."""
     # PSEUDOCODE: select complete days -> compare clock-hour means with total variance.
+    if type(minimum) is not int or minimum < 1:
+        raise ValueError('Activity regularity needs a positive integer minimum.')
     x = np.asarray(days, dtype=float)
     if x.ndim != 2 or x.shape[1] != 24 or np.isinf(x).any() or np.any(x[np.isfinite(x)] < 0):
         raise ValueError('Activity history must be days by 24 hours.')
@@ -67,7 +69,9 @@ def intradaily_variability(hourly):
     """IV for a contiguous equally spaced series; missing samples invalidate it."""
     # PSEUDOCODE: compare successive squared changes against total squared deviation.
     x = np.asarray(hourly, dtype=float)
-    if x.ndim != 1 or len(x) < 2 or not np.isfinite(x).all():
+    if x.ndim != 1 or np.isinf(x).any() or np.any(x[np.isfinite(x)] < 0):
+        raise ValueError('Intradaily variability requires nonnegative activity without infinities.')
+    if len(x) < 2 or not np.isfinite(x).all():
         return None
     denominator = (len(x) - 1) * np.sum((x - x.mean()) ** 2)
     return float(len(x) * np.sum(np.diff(x) ** 2) / denominator) if denominator > 0 else None

@@ -15,6 +15,23 @@ UTC = timezone.utc
 
 
 class MeasurementTests(unittest.TestCase):
+    def test_invalid_regularity_inputs_cannot_become_missing_or_stable(self):
+        from rhythm_dnb.measures.scaling import circular_summary
+        for period in (0, -1, True, float('nan'), float('inf')):
+            with self.assertRaises(ValueError): circular_summary([1., 2.], period=period)
+        for minimum in (0, -1, 1.5, True, float('nan')):
+            with self.assertRaises(ValueError): sleep_regularity([1.] * 7, minimum)
+            with self.assertRaises(ValueError): eating_regularity([1.] * 7, [2.] * 7, minimum)
+            with self.assertRaises(ValueError): activity_regularity(np.ones((7, 24)), minimum)
+        with self.assertRaises(ValueError): circular_summary([[1., 2.], [3., 4.]])
+        with self.assertRaises(ValueError): sleep_regularity([1.] * 7 + [float('inf')])
+        with self.assertRaises(ValueError): eating_regularity([1.] * 7, [2.] * 6 + [float('inf')])
+        with self.assertRaises(ValueError): intradaily_variability([0., -1., 2.])
+        with self.assertRaises(ValueError): intradaily_variability([0., float('inf')])
+        self.assertIsNone(intradaily_variability([0., float('nan'), 2.]))
+        self.assertEqual(circular_summary([float('nan')]), (None, None))
+        self.assertTrue(all(np.isfinite(v) for v in circular_summary([1e308, 1e308])))
+
     def test_dst_elapsed_sleep(self):
         zone = ZoneInfo('America/Chicago')
         result = daily_sleep([(datetime(2025, 3, 8, 23, tzinfo=zone), datetime(2025, 3, 9, 7, tzinfo=zone))], 'America/Chicago')

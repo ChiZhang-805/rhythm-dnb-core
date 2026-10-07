@@ -64,3 +64,5 @@ class ResearchGuardTests(unittest.TestCase):
                            result['candidates']['logistic']['grouped_cv_average_precision'] + .15)
         self.assertFalse(result['test_used'])
         self.assertEqual(deviation_and_trend([[1, 2], [2, 2], [3, 2]]).shape, (6,))
+        with self.assertRaises(ValueError): deviation_and_trend([[1., 2.], [float('inf'), 3.]])
+        self.assertTrue(np.isnan(deviation_and_trend([[1., float('nan')], [2., float('nan')]])[3:]).all())

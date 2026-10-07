@@ -28,8 +28,10 @@ def daily_eating(events, zone, *, complete):
 
 def eating_regularity(first, last, minimum=6):
     # PSEUDOCODE: use paired complete days -> take the larger first/last circular spread.
+    if type(minimum) is not int or minimum < 1:
+        raise ValueError('Eating regularity needs a positive integer minimum.')
     x = np.asarray([first, last], dtype=float).T
-    if x.ndim != 2 or x.shape[1] != 2:
+    if x.ndim != 2 or x.shape[1] != 2 or np.isinf(x).any():
         raise ValueError('First and last meal series must align.')
     x = x[np.isfinite(x).all(axis=1)]
     if len(x) < minimum:
