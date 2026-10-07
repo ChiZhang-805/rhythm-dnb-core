@@ -128,5 +128,6 @@ class TextGuardTests(unittest.TestCase):
             self.assertEqual(original['estimates'], guarded_output['estimates'])
             self.assertIsNone(guarded_output['scores']['stress_intensity'])
             self.assertFalse(guarded_output['acceptance_certified'])
+            self.assertTrue(guarded_output['evidence_trained'])
             self.assertFalse(guarded_output['eligible_for_primary_dnb'])
             self.assertEqual(before, {p.name: file_hash(p) for p in checkpoint.iterdir() if p.is_file()})

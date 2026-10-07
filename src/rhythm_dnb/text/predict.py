@@ -70,7 +70,7 @@ class TextPredictor:
                         'estimates': estimates, 'reasons': {k: 'uncalibrated_experimental_text_evidence' for k in estimates},
                         'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),
                         'score_kind': 'experimental_semantic_reference_estimate', 'evidence_calibrated': False,
-                        'evidence_trained': self.manifest.get('evidence_trained', False),
+                        'evidence_trained': self.guard is not None or self.evidence_adapter is not None or self.manifest.get('evidence_trained', False),
                         'independent_human_gold': False, 'eligible_for_primary_dnb': False}
             scores, reasons = qualified_scores(estimates, evidence, self.manifest.get('evidence_calibration'))
             return {'category': category, 'scores': scores, 'normalized': {k: v / 100 if v is not None else None for k, v in scores.items()},

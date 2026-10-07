@@ -82,6 +82,7 @@ class EvidenceAdapterTests(unittest.TestCase):
             self.assertEqual(first['estimates'], second['estimates'])
             self.assertIsNone(second['scores']['stress_intensity'])
             self.assertFalse(second['acceptance_certified'])
+            self.assertTrue(second['evidence_trained'])
             self.assertEqual(before, {p.relative_to(parent).as_posix(): file_hash(p) for p in Path(parent).rglob('*') if p.is_file()})
             heldout = evidence_fixture(identity, ('test',))
             evaluated = evaluate_evidence(heldout, selected, base, root/'evaluation', device='cpu')
