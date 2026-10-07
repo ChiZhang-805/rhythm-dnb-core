@@ -145,6 +145,10 @@ def main(argv=None):
     evidence_test.add_argument('--base', required=True); evidence_test.add_argument('--output-dir', required=True)
     evidence_test.add_argument('--device', choices=('auto','cpu','cuda'), default='cuda')
     evidence_test.add_argument('--regression-only', action='store_true')
+    evidence_policy = sub.add_parser('refine-evidence-thresholds', help='Center validation-equivalent threshold gaps without retraining')
+    evidence_policy.add_argument('--corpus', required=True); evidence_policy.add_argument('--checkpoint', required=True)
+    evidence_policy.add_argument('--base', required=True); evidence_policy.add_argument('--output-dir', required=True)
+    evidence_policy.add_argument('--device', choices=('auto','cpu','cuda'), default='cuda')
     args = parser.parse_args(argv)
     if args.command == 'hardware':
         from .text.runtime import hardware_report
@@ -339,5 +343,9 @@ def main(argv=None):
         from .text.evidence_adapter import evaluate_evidence
         print(canonical_json(evaluate_evidence(_read(args.corpus), args.checkpoint, args.base, args.output_dir,
             device=args.device, regression_only=args.regression_only))); return 0
+    elif args.command == 'refine-evidence-thresholds':
+        from .text.evidence_adapter import refine_evidence_thresholds
+        print(canonical_json(refine_evidence_thresholds(_read(args.corpus), args.checkpoint, args.base,
+            args.output_dir, device=args.device))); return 0
     save_report(result, args.output)
     print(canonical_json({'output': args.output})); return 0

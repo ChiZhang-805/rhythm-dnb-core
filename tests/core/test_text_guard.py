@@ -82,6 +82,12 @@ class TextGuardTests(unittest.TestCase):
                 load_features(cache)
         self.assertIsNone(choose_empirical_threshold([0, 1], [.7, .7], .95))
         self.assertEqual(choose_empirical_threshold([0, 1, 1], [.2, .8, .9], .95), .8)
+        margin = choose_empirical_threshold([0, 1, 1], [.2, .8, .9], .95, boundary='validation_gap_midpoint')
+        self.assertEqual(margin, .5)
+        self.assertEqual(choose_empirical_threshold([0, 1], [.7, .7], .95, boundary='validation_gap_midpoint'), None)
+        self.assertEqual(choose_empirical_threshold([1, 1], [.8, .9], .95, boundary='validation_gap_midpoint'), 0.)
+        for value in ([.2, .8, .9], [.2, .79, .91]):
+            self.assertEqual(selective_metrics([0, 1, 1], value, margin)['missed_supported'], 0)
         self.assertEqual(selective_metrics([0, 1], [.3, .7], None)['accepted'], 0)
         with self.assertRaisesRegex(ValueError, 'finite probability'):
             selective_metrics([0, 1], [.3, .7], float('nan'))

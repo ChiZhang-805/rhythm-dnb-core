@@ -25,10 +25,12 @@ def binary_metrics(labels, probabilities):
         'roc_auc': float(roc_auc_score(labels, probabilities)) if len(set(labels)) == 2 else None}
 
 
-def choose_empirical_threshold(labels, probabilities, target_precision):
+def choose_empirical_threshold(labels, probabilities, target_precision, *, boundary='observed'):
     # PSEUDOCODE: choose greatest validation coverage meeting a declared empirical target; never claim certification.
     if type(target_precision) not in (float, int) or not 0 < target_precision < 1:
         raise ValueError('Declare the experimental validation precision target explicitly.')
+    if boundary not in ('observed', 'validation_gap_midpoint'):
+        raise ValueError('Unknown evidence threshold boundary rule.')
     labels, probabilities = np.asarray(labels), np.asarray(probabilities)
     binary_metrics(labels, probabilities)
     selected = None
@@ -36,6 +38,14 @@ def choose_empirical_threshold(labels, probabilities, target_precision):
         accepted = probabilities >= threshold
         if labels[accepted].mean() >= target_precision:
             selected = float(threshold)
+    if selected is not None and boundary == 'validation_gap_midpoint':
+        rejected = probabilities[probabilities < selected]
+        if not len(rejected):
+            return 0.
+        lower = float(rejected.max())
+        # Every cutoff in this gap gives the same validation decisions; its midpoint maximizes the minimum margin.
+        middle = lower + (selected-lower)/2
+        return middle if middle > lower else selected
     return selected
 
 

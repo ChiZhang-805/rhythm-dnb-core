@@ -13,7 +13,7 @@ from .features import validate_feature_rows
 from .guard import binary_metrics, choose_empirical_threshold, selective_metrics
 
 
-def evidence_report(rows, predictions, *, thresholds=None, target_precision=None):
+def evidence_report(rows, predictions, *, thresholds=None, target_precision=None, threshold_boundary='observed'):
     # PSEUDOCODE: evaluate explicit evidence labels per metric; select thresholds only when explicitly requested.
     if len(rows) != len(predictions) or not rows or (thresholds is None) == (target_precision is None):
         raise ValueError('Aligned evidence rows need either validation selection or fixed thresholds.')
@@ -25,7 +25,7 @@ def evidence_report(rows, predictions, *, thresholds=None, target_precision=None
             heads[metric] = {'n': 0, 'threshold': thresholds[metric] if thresholds is not None else None}
             continue
         labels = [p[2] for p in pairs]; probabilities = [p[1] for p in pairs]
-        threshold = thresholds[metric] if thresholds is not None else choose_empirical_threshold(labels, probabilities, target_precision)
+        threshold = thresholds[metric] if thresholds is not None else choose_empirical_threshold(labels, probabilities, target_precision, boundary=threshold_boundary)
         heads[metric] = {**binary_metrics(labels, probabilities), 'threshold': threshold,
                         **selective_metrics(labels, probabilities, threshold)}
         for row, probability, label in pairs:
@@ -139,7 +139,7 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
         weights = {c: len(dataset)/(len(counts)*n) for c, n in counts.items()} if config['balance_categories'] else None
         protocol = {'config': config, 'dataset': corpus, 'parent_scoring_checkpoint_id': identity,
             'execution': execution, 'signature': signature, 'selection_metric': 'validation_macro_log_loss',
-            'threshold_selection': 'validation_empirical_precision', 'evidence_calibrated': False,
+            'threshold_selection': 'validation_empirical_precision_with_gap_midpoint', 'evidence_calibrated': False,
             'score_model_modified': False, 'numeric_outputs_from_this_adapter_valid': False,
             'head_initialization': 'zero weights; training evidence class log odds', 'category_loss_weights': weights}
         runtime.primary(lambda: (output/'protocol.json').write_text(canonical_json(protocol), encoding='utf-8'))
@@ -152,7 +152,8 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
             if not progress['optimizer_steps']:
                 raise ValueError('No successful optimizer updates in evidence training.')
             validation = runtime.primary(lambda: evidence_report(partitions['validation'],
-                predict_rows(core, tokenizer, partitions['validation'], config, runtime.device), target_precision=config['evidence_precision']))
+                predict_rows(core, tokenizer, partitions['validation'], config, runtime.device), target_precision=config['evidence_precision'],
+                threshold_boundary='validation_gap_midpoint'))
             history.append({'epoch': epoch+1, **progress, 'validation': validation, 'seconds': time.monotonic()-started})
             if any(not torch.equal(value, frozen[key]) for key, value in ((k, v.detach().cpu()) for k, v in core.heads.state_dict().items())):
                 raise RuntimeError('Frozen intensity heads changed during evidence-only learning.')
@@ -174,6 +175,42 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
                   'parent_scoring_checkpoint_id': identity, 'evidence_calibrated': False}
         runtime.primary(lambda: (output/'result.json').write_text(canonical_json(result), encoding='utf-8'))
         return result
+
+
+def refine_evidence_thresholds(payload, checkpoint, base, output_dir, *, device='cuda'):
+    # PSEUDOCODE: use exactly the original validation rows -> center equivalent decision gaps -> copy unchanged weights with explicit lineage.
+    import shutil
+    from .checkpoint import load_checkpoint
+    from .train import predict_rows
+    partitions, corpus = prepare_evidence(payload)
+    manifest, identity = _inspect_evidence(checkpoint)
+    if corpus['id'] != manifest['dataset']['id'] or payload['initial_checkpoint_id'] != manifest['parent_scoring_checkpoint_id']:
+        raise ValueError('Threshold refinement requires the exact original development corpus and scorer.')
+    model, tokenizer, loaded, loaded_id = load_checkpoint(checkpoint, base_path=base, device=device, allow_evidence=True)
+    if identity != loaded_id or manifest != loaded:
+        raise ValueError('Evidence checkpoint changed during threshold refinement.')
+    predictions = predict_rows(model, tokenizer, partitions['validation'], manifest['config'], next(model.heads.parameters()).device)
+    previous = evidence_report(partitions['validation'], predictions, thresholds=manifest['thresholds'])
+    updated = evidence_report(partitions['validation'], predictions, target_precision=manifest['config']['evidence_precision'],
+                              threshold_boundary='validation_gap_midpoint')
+    if any(previous['heads'][k]['accepted'] != updated['heads'][k]['accepted'] or
+           previous['heads'][k]['false_acceptances'] != updated['heads'][k]['false_acceptances'] for k in previous['heads']):
+        raise ValueError('A threshold boundary refinement must preserve validation decisions exactly.')
+    destination = Path(output_dir).resolve(); source = Path(checkpoint).resolve()
+    if destination.is_relative_to(source):
+        raise ValueError('Threshold refinement output must be outside the original checkpoint.')
+    destination.mkdir(parents=True, exist_ok=False)
+    for name in manifest['files']:
+        path = destination/name; path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source/name, path)
+    refinement = {'source_checkpoint_id': identity, 'validation_id': fingerprint(partitions['validation']),
+        'boundary': 'validation_gap_midpoint', 'test_used': False, 'weights_changed': False,
+        'validation_decisions_changed': False, 'evidence_calibrated': False}
+    (destination/'manifest.json').write_text(canonical_json({**manifest, 'threshold_refinement': refinement,
+        'threshold_selection': 'validation_empirical_precision_with_gap_midpoint', 'validation': updated,
+        'thresholds': {k: v['threshold'] for k, v in updated['heads'].items()}}), encoding='utf-8')
+    _, final_identity = _inspect_evidence(destination)
+    return {**refinement, 'checkpoint': str(destination), 'checkpoint_id': final_identity}
 
 
 def evaluate_evidence(payload, checkpoint, base, output_dir, *, device='cuda', regression_only=False):

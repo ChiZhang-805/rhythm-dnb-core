@@ -82,7 +82,9 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 当冻结表示上的依据分类器无法区分复杂对话时，可用 `train-evidence-adapter --corpus development.json --checkpoint 原评分模型 --base 基模 --config 配置.json --output-dir 新训练目录` 单独学习上下文。它只接收显式依据标签，全部程度分数必须为空，17 项在训练和验证中均须有正负例；配置要求 `evidence_loss_weight=1`、`scope_loss_weight=0`、`train_experimental_evidence=true`。使用 `research,text,quantized` 依赖。
 
-该流程按验证集各指标平均 log loss 选轮次，封存检查用 `evaluate-evidence-adapter`。独立依据模型不能直接用来打程度分；只能通过 `score-text-experiment --evidence-checkpoint 依据模型` 与其绑定的原评分模型配合。原评分不变，未独立校准时仍不放行正式分数。新训练目录保留每次改善的检查点；此入口尚不支持优化器断点续训。
+该流程按验证集各指标平均 log loss 选轮次，封存检查用 `evaluate-evidence-adapter`。接收门槛取验证集中相邻接收/拒绝概率的中点，在保持验证决策不变的前提下留出最大边界余量；不是统一设为 0.5，也不是独立校准。旧依据模型可用 `refine-evidence-thresholds` 对原验证语料重算该边界，权重不变，新文件另存。
+
+独立依据模型只能通过 `score-text-experiment --evidence-checkpoint 依据模型` 与绑定的原评分模型配合，不能直接打程度分。原评分不变，未独立校准时仍不放行正式分数。须另查“只提到一个指标”和“多个指标均有依据”，避免学成整类全接收/全拒绝。新训练目录保留每次改善的检查点；此入口尚不支持优化器断点续训。
 
 ## 文本训练之后怎么走
 

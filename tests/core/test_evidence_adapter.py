@@ -8,7 +8,7 @@ import unittest
 import torch
 from rhythm_dnb.provenance import fingerprint, file_hash
 from rhythm_dnb.text.schema import CATEGORIES
-from rhythm_dnb.text.evidence_adapter import prepare_evidence, train_evidence, evaluate_evidence, EvidenceAdapter
+from rhythm_dnb.text.evidence_adapter import prepare_evidence, train_evidence, evaluate_evidence, EvidenceAdapter, refine_evidence_thresholds
 
 
 def evidence_fixture(parent, roles=('train', 'validation')):
@@ -69,6 +69,12 @@ class EvidenceAdapterTests(unittest.TestCase):
             self.assertTrue(all(torch.equal(v, new.heads.state_dict()[k]) for k, v in old.heads.state_dict().items()))
             self.assertTrue(any(not torch.equal(v, new.encoder.state_dict()[k]) for k, v in old.encoder.state_dict().items()))
             self.assertFalse(manifest['numeric_outputs_from_this_adapter_valid'])
+            refined = refine_evidence_thresholds(evidence_fixture(identity), selected, base, root/'refined', device='cpu')
+            self.assertFalse(refined['weights_changed'])
+            self.assertFalse(refined['test_used'])
+            newer, _ = inspect_checkpoint(refined['checkpoint'], allow_evidence=True)
+            self.assertEqual(manifest['files'], newer['files'])
+            self.assertEqual(manifest['validation']['false_acceptances'], newer['validation']['false_acceptances'])
             plain = TextPredictor(parent, base_path=base, device='cpu', allow_experimental=True)
             combined = TextPredictor(parent, base_path=base, device='cpu', allow_experimental=True, evidence_checkpoint=selected)
             first = plain.predict('stress', '我最近很焦虑')
