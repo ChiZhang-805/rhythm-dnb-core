@@ -140,6 +140,8 @@ def main(argv=None):
     evidence_fit.add_argument('--corpus', required=True); evidence_fit.add_argument('--checkpoint', required=True)
     evidence_fit.add_argument('--base', required=True); evidence_fit.add_argument('--config', required=True)
     evidence_fit.add_argument('--output-dir', required=True)
+    evidence_fit.add_argument('--initialize-evidence', help='Continue a compatible evidence adapter without resetting its heads')
+    evidence_fit.add_argument('--initial-evidence-corpus', help='Exact development corpus used by the initial evidence adapter')
     evidence_test = sub.add_parser('evaluate-evidence-adapter', help='Evaluate fixed evidence thresholds on separate diagnostic cases')
     evidence_test.add_argument('--corpus', required=True); evidence_test.add_argument('--checkpoint', required=True)
     evidence_test.add_argument('--base', required=True); evidence_test.add_argument('--output-dir', required=True)
@@ -335,7 +337,9 @@ def main(argv=None):
         print(canonical_json(evaluate_guard(args.cache, args.guard, args.output_dir, regression_only=args.regression_only))); return 0
     elif args.command == 'train-evidence-adapter':
         from .text.evidence_adapter import train_evidence
-        result = train_evidence(_read(args.corpus), args.checkpoint, args.base, args.output_dir, _read(args.config))
+        result = train_evidence(_read(args.corpus), args.checkpoint, args.base, args.output_dir, _read(args.config),
+            initialize_evidence=args.initialize_evidence,
+            initial_evidence_corpus=_read(args.initial_evidence_corpus) if args.initial_evidence_corpus else None)
         if int(os.environ.get('RANK', '0')) == 0:
             print(canonical_json({'checkpoint': result['best_checkpoint'], 'validation_log_loss': result['validation_log_loss']}))
         return 0

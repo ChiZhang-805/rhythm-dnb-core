@@ -115,3 +115,26 @@ class EvidenceAdapterTests(unittest.TestCase):
             inherited['id'] = fingerprint(inherited['rows'])
             with self.assertRaisesRegex(ValueError, 'text was used'):
                 evaluate_evidence(inherited, selected, base, root/'ancestor-leak', device='cpu')
+            warm_payload = evidence_fixture(identity)
+            for row in warm_payload['rows']:
+                for key in ('example_id', 'group_id', 'family_id', 'text'):
+                    row[key] = '续训 ' + row[key]
+            warm_payload['id'] = fingerprint(warm_payload['rows'])
+            warm = train_evidence(warm_payload, parent, base, root/'warm', {**setup, 'epochs': 1},
+                initialize_evidence=selected, initial_evidence_corpus=evidence_fixture(identity))
+            warm_manifest, _ = inspect_checkpoint(warm['best_checkpoint'], allow_evidence=True)
+            self.assertEqual(warm_manifest['evidence_initialization']['checkpoint_id'], file_hash(Path(selected)/'manifest.json'))
+            self.assertEqual(warm['history'][0]['epoch'], 0)
+            warm_model, _, _, _ = load_checkpoint(warm['best_checkpoint'], base_path=base, allow_evidence=True)
+            self.assertTrue(all(torch.equal(v, warm_model.heads.state_dict()[k]) for k, v in old.heads.state_dict().items()))
+            with self.assertRaisesRegex(ValueError, 'overlaps'):
+                evaluate_evidence(overlap, warm['best_checkpoint'], base, root/'evidence-ancestor-leak', device='cpu')
+            leaked = evidence_fixture(identity)
+            for row in leaked['rows']:
+                row['split'] = 'validation' if row['split'] == 'train' else 'train'
+            leaked['id'] = fingerprint(leaked['rows'])
+            with self.assertRaisesRegex(ValueError, 'prior gradient-training'):
+                train_evidence(leaked, parent, base, root/'warm-leak', setup,
+                    initialize_evidence=selected, initial_evidence_corpus=evidence_fixture(identity))
+            with self.assertRaisesRegex(ValueError, 'both checkpoint'):
+                train_evidence(warm_payload, parent, base, root/'warm-no-corpus', setup, initialize_evidence=selected)

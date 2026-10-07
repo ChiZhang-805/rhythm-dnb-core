@@ -86,6 +86,8 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 独立依据模型只能通过 `score-text-experiment --evidence-checkpoint 依据模型` 与绑定的原评分模型配合，不能直接打程度分。原评分不变，未独立校准时仍不放行正式分数。覆盖报告会检查同一句话中“部分指标有依据、部分没有依据”的组合；“明确没有症状”算有依据。还须覆盖多项同时出现、同时缺席及强弱混合，不能只让每项单独凑齐正负例。新训练目录保留每次改善的检查点；此入口尚不支持优化器断点续训。
 
+继续学习已有依据模型时，加 `--initialize-evidence 旧依据模型 --initial-evidence-corpus 该模型原development.json`。保留编码器与依据头，重新建立优化器；原评分模型仍通过 `--checkpoint` 绑定。旧训练内容不能进入新验证；初始模型也参与当前验证集的比较，续训变差时保留初始检查点。既往验证只可作为开发资料，不能再宣称独立测试。
+
 ## 文本训练之后怎么走
 
 自建模拟文本和模型参考评分使用独立的实验入口：`export-text-experiment` 从 `master.sqlite` 导出 `development.json` 与 `test.json`；`train-text-experiment` 只读取前者，用验证误差选轮次。锁定模型后才运行 `evaluate-text-experiment`；已查看的测试只能加 `--regression-only` 作开发检查。`score-text-experiment` 把原始 0–100 分放在 `estimates`，未校准的 `scores` 保留为空；实验权重不能默认接入正式 DNB。

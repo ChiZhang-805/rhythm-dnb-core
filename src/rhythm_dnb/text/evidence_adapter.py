@@ -78,7 +78,33 @@ def prepare_evidence(payload):
     return partitions, corpus
 
 
-def train_evidence(payload, checkpoint, base, output_dir, config):
+def _continuation_evidence(checkpoint, source_payload, partitions, parent, base_id, config):
+    # PSEUDOCODE: bind a prior evidence adapter and its exact development data; prohibit old gradient-training rows in new validation.
+    previous, identity = _inspect_evidence(checkpoint, parent)
+    old_partitions, old_corpus = prepare_evidence(source_payload)
+    if old_corpus['id'] != previous['dataset']['id'] or old_corpus['initial_checkpoint_id'] != parent or previous['base_id'] != base_id:
+        raise ValueError('Evidence continuation source corpus or base differs from the checkpoint.')
+    for key in ('model_id', 'revision', 'quantization', 'lora_rank', 'lora_alpha', 'dropout'):
+        if previous['config'][key] != config[key]:
+            raise ValueError('Evidence continuation architecture mismatch: ' + key)
+    ancestors = previous.get('evidence_initialization') or {}
+    groups = {key: sorted({r[key] for r in old_partitions['train'] if r.get(key)} | set(ancestors.get('training_groups', {}).get(key, [])))
+              for key in ('group_id', 'participant_id', 'family_id')}
+    texts = sorted({fingerprint(''.join(r['text'].split())) for r in old_partitions['train']} | set(ancestors.get('training_text_hashes', [])))
+    for key, values in groups.items():
+        if set(values) & {r[key] for r in partitions['validation'] if r.get(key)}:
+            raise ValueError('Evidence continuation validation overlaps prior gradient-training groups: ' + key)
+    if set(texts) & {fingerprint(''.join(r['text'].split())) for r in partitions['validation']}:
+        raise ValueError('Evidence continuation validation text was used for gradient training.')
+    return {'checkpoint_id': identity, 'corpus_id': old_corpus['id'], 'optimizer_reset': True,
+        'training_groups': groups, 'training_text_hashes': texts,
+        'development_groups': {key: sorted(set(values) | set(ancestors.get('development_groups', {}).get(key, [])))
+                               for key, values in old_corpus['development_groups'].items()},
+        'development_text_hashes': sorted(set(old_corpus['development_text_hashes']) | set(ancestors.get('development_text_hashes', []))),
+        'previous_validation_may_be_reused_for_development': True}
+
+
+def train_evidence(payload, checkpoint, base, output_dir, config, *, initialize_evidence=None, initial_evidence_corpus=None):
     # PSEUDOCODE: validate evidence-only protocol -> continue a separate encoder adapter -> select solely on validation loss.
     import torch
     from torch.utils.data import DataLoader
@@ -97,6 +123,10 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
     partitions, corpus = prepare_evidence(payload)
     previous, identity = inspect_checkpoint(checkpoint, allow_experimental=True)
     parent = validate_initialization(checkpoint, partitions, corpus, previous['base_id'], config, True)
+    if (initialize_evidence is None) != (initial_evidence_corpus is None):
+        raise ValueError('Evidence continuation needs both checkpoint and its exact original development corpus.')
+    continuation = _continuation_evidence(initialize_evidence, initial_evidence_corpus, partitions,
+        identity, previous['base_id'], config) if initialize_evidence is not None else None
     if previous['config'].get('scope_loss_weight', 0):
         raise ValueError('Evidence-only initialization requires a scoring model without scope heads.')
     output = Path(output_dir).resolve()
@@ -108,21 +138,22 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
         torch.backends.cudnn.benchmark = False; torch.backends.cudnn.deterministic = True
         execution = {**runtime.describe(), 'training_implementation': implementation_identity(),
                      'evidence_implementation': fingerprint(Path(__file__).read_text(encoding='utf-8'))}
-        signature = fingerprint({'corpus': corpus['id'], 'config': config, 'parent': identity})
+        signature = fingerprint({'corpus': corpus['id'], 'config': config, 'parent': identity, 'evidence_initialization': continuation})
         if len(set(runtime.gather(signature))) != 1:
             raise ValueError('Distributed evidence training inputs differ.')
         runtime.primary(lambda: output.mkdir(parents=True, exist_ok=False))
-        core, tokenizer, _, loaded_id = load_checkpoint(checkpoint, base_path=base, device=runtime.device,
-            dtype=runtime.dtype, allow_experimental=True, trainable=True)
-        if loaded_id != identity:
+        core, tokenizer, _, loaded_id = load_checkpoint(initialize_evidence or checkpoint, base_path=base, device=runtime.device,
+            dtype=runtime.dtype, allow_experimental=True, allow_evidence=continuation is not None, trainable=True)
+        if loaded_id != (continuation['checkpoint_id'] if continuation is not None else identity):
             raise ValueError('Parent checkpoint changed before training.')
         core.heads.requires_grad_(False)
         frozen = {k: v.detach().cpu().clone() for k, v in core.heads.state_dict().items()}
-        with torch.no_grad():
-            for category, (_, keys) in CATEGORIES.items():
-                head = core.evidence_heads[category]; head.weight.zero_()
-                head.bias.copy_(head.bias.new_tensor([math.log(corpus['counts']['train'][k]['positive'] /
-                                                              corpus['counts']['train'][k]['negative']) for k in keys]))
+        if continuation is None:
+            with torch.no_grad():
+                for category, (_, keys) in CATEGORIES.items():
+                    head = core.evidence_heads[category]; head.weight.zero_()
+                    head.bias.copy_(head.bias.new_tensor([math.log(corpus['counts']['train'][k]['positive'] /
+                                                                  corpus['counts']['train'][k]['negative']) for k in keys]))
         if config['gradient_checkpointing']:
             core.encoder.config.use_cache = False
             core.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
@@ -140,12 +171,25 @@ def train_evidence(payload, checkpoint, base, output_dir, config):
         counts = Counter(r['category'] for r in partitions['train'])
         weights = {c: len(dataset)/(len(counts)*n) for c, n in counts.items()} if config['balance_categories'] else None
         protocol = {'config': config, 'dataset': corpus, 'parent_scoring_checkpoint_id': identity,
+            'evidence_initialization': continuation,
             'execution': execution, 'signature': signature, 'selection_metric': 'validation_macro_log_loss',
             'threshold_selection': 'validation_empirical_precision_with_gap_midpoint', 'evidence_calibrated': False,
             'score_model_modified': False, 'numeric_outputs_from_this_adapter_valid': False,
-            'head_initialization': 'zero weights; training evidence class log odds', 'category_loss_weights': weights}
+            'head_initialization': 'preserved previous evidence heads' if continuation else 'zero weights; training evidence class log odds',
+            'category_loss_weights': weights}
         runtime.primary(lambda: (output/'protocol.json').write_text(canonical_json(protocol), encoding='utf-8'))
         best, stale, history, best_path = math.inf, 0, [], None
+        if continuation is not None:
+            initial_validation = runtime.primary(lambda: evidence_report(partitions['validation'],
+                predict_rows(core, tokenizer, partitions['validation'], config, runtime.device), target_precision=config['evidence_precision'],
+                threshold_boundary='validation_gap_midpoint'))
+            best = initial_validation['macro_log_loss']
+            best_path = runtime.primary(lambda: str(save_checkpoint(output/'initial-model', core, tokenizer, config,
+                {**protocol, 'run_id': output.name, 'base_id': previous['base_id'], 'epoch': 0,
+                 'initialization': parent, 'validation': initial_validation, 'evidence_trained': True,
+                 'thresholds': {k: v['threshold'] for k, v in initial_validation['heads'].items()}}, purpose='experimental_evidence')))
+            history.append({'epoch': 0, 'validation': initial_validation, 'optimizer_steps': 0,
+                            'role': 'initial_evidence_reselected_on_current_validation'})
         for epoch in range(config['epochs']):
             started = time.monotonic()
             loader = DataLoader(dataset, batch_sampler=ShardedBatches(len(dataset), config['batch_size'], runtime.rank,
@@ -225,10 +269,13 @@ def evaluate_evidence(payload, checkpoint, base, output_dir, *, device='cuda', r
     manifest, _ = _inspect_evidence(checkpoint)
     exposed = manifest['dataset']
     ancestors = manifest.get('initialization') or {}
+    evidence_ancestors = manifest.get('evidence_initialization') or {}
     for key, values in exposed['development_groups'].items():
-        if (set(values) | set(ancestors.get('exposure_groups', {}).get(key, []))) & {r[key] for r in rows if r.get(key)}:
+        if (set(values) | set(ancestors.get('exposure_groups', {}).get(key, [])) |
+                set(evidence_ancestors.get('development_groups', {}).get(key, []))) & {r[key] for r in rows if r.get(key)}:
             raise ValueError('Evidence test overlaps fitted development groups: ' + key)
-    if (set(exposed['development_text_hashes']) | set(ancestors.get('exposure_text_hashes', []))) & {fingerprint(''.join(r['text'].split())) for r in rows}:
+    if (set(exposed['development_text_hashes']) | set(ancestors.get('exposure_text_hashes', [])) |
+            set(evidence_ancestors.get('development_text_hashes', []))) & {fingerprint(''.join(r['text'].split())) for r in rows}:
         raise ValueError('Evidence test text was used for fitting/selection.')
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=False)
     model, tokenizer, loaded_manifest, identity = load_checkpoint(checkpoint, base_path=base, device=device, allow_evidence=True)
