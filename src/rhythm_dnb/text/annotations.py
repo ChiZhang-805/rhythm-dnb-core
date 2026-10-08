@@ -12,6 +12,8 @@ def validate_scope_targets(row):
             raise ValueError('Scope targets require a valid metric, self and an explicit period.')
         if not target.get('evidence') and not target.get('excluded'):
             raise ValueError('Scope supervision requires at least one annotated span.')
+        if row.get('label_states', {}).get(key) == 'insufficient_evidence' and target.get('evidence'):
+            raise ValueError('Insufficient evidence cannot simultaneously label a positive evidence span.')
         for kind in ('evidence', 'excluded'):
             for span in target.get(kind, []):
                 a, b = span['start'], span['end']

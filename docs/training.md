@@ -96,7 +96,7 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 标注用 `label_states` 区分 `supported`（有依据与分数）、`supported_unscored`（有依据但程度未定）、`explicit_absence`（症状明确不存在）、`insufficient_evidence`（信息不足）、`unreviewed`（待标注）和 `disputed`（有分歧）。只有第一、第三种填写数值，其余保持空值；“有依据但未定分”可训练证据判断，不编造程度。`train_experimental_evidence=true` 只从显式标注学习证据头，仍须独立校准才能接收分数。
 
-`scope_targets` 按指标记录本人、时段、证据原文和应排除的片段；`scope_loss_weight>0` 启用逐 token 的辅助监督，只有标过的片段参与损失。它可与旧适配器一起续训并完整保存；辅助头不是已验证的解释器。用相同数据、预算和种子比较权重为零的对照，不预设某个权重最优。
+`scope_targets` 按指标记录本人、时段、证据原文和应排除的片段；`scope_loss_weight>0` 启用逐 token 的辅助监督，只有标过的片段参与损失。“没有依据”不能同时填入正面依据片段，但可以标出应排除的他人描述。它可与旧适配器一起续训并完整保存；辅助头不是已验证的解释器。用相同数据、预算和种子比较权重为零的对照，不预设某个权重最优。
 
 修缮入口：`audit-text` 查全部 17 项覆盖；`prepare-text-review` 生成隐藏旧答案的双人标注包；`compare-text-reviews` 列出分歧而不自动平均；`refresh-text-source` 从最新只读库恢复来源时间和文本；`seal-text-experiment` 拒绝旧暴露记录进入新留出集。时间只是自编文本对应的源记录时间，不能冒充真实文本提交时间。
 

@@ -46,3 +46,20 @@ class ReviewSheetTests(unittest.TestCase):
             sheet['J2'] = '我压力很大'; sheet['H2'] = 50; workbook.save(path)
             with self.assertRaises(ValueError):
                 import_review_sheet(packet, path)
+
+    def test_no_evidence_state_cannot_teach_a_positive_evidence_span(self):
+        packet = {'rows': [{'blind_id':'software-only', 'category':'stress', 'text':'同事说他压力很大。',
+            'scores': {'stress_intensity':None}, 'label_states':{'stress_intensity':'unreviewed'}}]}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'review.xlsx'; export_review_sheet(packet, path)
+            workbook = load_workbook(path); sheet = workbook['标注']
+            for column, value in {'F':'test-rater','G':'insufficient_evidence','I':'当前','J':'他压力很大','M':'是'}.items():
+                sheet[column+'2'] = value
+            workbook.save(path)
+            with self.assertRaisesRegex(ValueError, 'positive evidence span'):
+                import_review_sheet(packet, path)
+            sheet['J2'] = None; sheet['K2'] = '同事说他压力很大'; sheet['L2'] = 'other_person'; workbook.save(path)
+            imported = import_review_sheet(packet, path)['rows'][0]
+            self.assertIsNone(imported['scores']['stress_intensity'])
+            self.assertEqual(imported['scope_targets']['stress_intensity']['evidence'], [])
+            self.assertEqual(imported['scope_targets']['stress_intensity']['excluded'][0]['reason'], 'other_person')

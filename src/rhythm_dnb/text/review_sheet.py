@@ -46,6 +46,7 @@ def export_review_sheet(packet, path):
                  'explicit_absence：明确没有该症状，分数为 0；不适用于心情好坏、睡眠质量、社交意愿或满意度。',
                  'insufficient_evidence：没有足够依据；disputed：仍有分歧；unreviewed：未完成。这三种分数留空。',
                  '有依据时填写对应时段，并把原文中的依据原样复制到“依据原文”；重复出现时复制更完整、唯一的一段。',
+                 '选择 insufficient_evidence 时，“依据原文”留空；仍可填写应当排除的原文和原因。',
                  '需要排除他人、过去已缓解的描述、被否定说法或反话字面内容时，填写“排除原文”和对应原因。',
                  '空白不等于零分。导入工具检查格式与身份记录，不能代替独立人工复核。'):
         guide.append([line])

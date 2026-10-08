@@ -62,6 +62,13 @@ class ResearchRepairsTests(unittest.TestCase):
         self.assertEqual(targets[1:5, column].tolist(), [0.] * 4)
         self.assertEqual(targets[5:11, column].tolist(), [1.] * 6)
         self.assertEqual(np.isfinite(targets).sum(), 10)
+        row['label_states'] = {'sleep_onset_difficulty': 'insufficient_evidence'}
+        with self.assertRaisesRegex(ValueError, 'positive evidence span'):
+            scope_token_targets(row, offsets)
+        row['scope_targets']['sleep_onset_difficulty']['evidence'] = []
+        excluded_only = np.asarray(scope_token_targets(row, offsets))
+        self.assertEqual(excluded_only[1:5, column].tolist(), [0.] * 4)
+        self.assertTrue(np.isnan(excluded_only[5:, column]).all())
 
     def test_supported_but_unscored_only_teaches_evidence(self):
         from rhythm_dnb.text.labels import has_supervision
@@ -141,7 +148,7 @@ class ResearchRepairsTests(unittest.TestCase):
             for row in rows:
                 key = next(iter(row['scores']))
                 row['scope_targets'] = {key: {'experiencer': 'self', 'period': 'current',
-                    'evidence': [{'start': 0, 'end': 5, 'quote': row['text'][:5]}],
+                    'evidence': [{'start': 0, 'end': 5, 'quote': row['text'][:5]}] if evidence_target(row, key) == 1 else [],
                     'excluded': [{'start': 5, 'end': len(row['text']), 'quote': row['text'][5:], 'reason': 'other_person'}]}}
             config.update(scope_loss_weight=.2, require_all_validation_metrics=True)
             result = train(rows, base, Path(folder) / 'run', config)
