@@ -16,6 +16,7 @@ plots = ["matplotlib>=3.8,<4"]
 text = ["torch>=2.6,<3", "transformers>=4.51,<6", "safetensors>=0.5,<1", "peft>=0.15,<1", "accelerate>=1.2,<2", "scipy>=1.11,<2"]
 quantized = ["bitsandbytes>=0.46,<1"]
 io = ["openpyxl>=3.1,<4", "pandas>=2,<4", "pyreadr>=0.5,<1"]
+web = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "httpx>=0.27,<1"]
 
 [project.scripts]
 rhythm-dnb = "rhythm_dnb.cli:main"
@@ -26,5 +27,8 @@ Issues = "https://github.com/ChiZhang-805/rhythm-dnb-core/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"rhythm_dnb.web" = ["static/*"]
 
 [tool.setuptools_scm]

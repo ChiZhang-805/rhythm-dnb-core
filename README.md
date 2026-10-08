@@ -33,6 +33,7 @@ python -m rhythm_dnb --help
 
 ## 使用说明
 
+- [网页与本地版](docs/web-use.md)：浏览器评分、本地安装和低成本托管选择。
 - [已训练模型怎么用](docs/model-use.md)：文件位置、一条预测命令和分数含义。
 - [研究方案](docs/research.md)：预测目标、DNB 计算和验证方法。
 - [数据接入](docs/data.md)：真实数据需要提供什么。

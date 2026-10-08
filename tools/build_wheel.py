@@ -19,6 +19,10 @@ def verify_wheel(wheel, root):
         actual = {n: archive.read(n) for n in names if n.endswith('.py')}
         if len(names) != len(set(names)) or actual != expected:
             raise ValueError('Wheel contains missing, stale or extra Python code.')
+        assets = {p.relative_to(root / 'src').as_posix(): p.read_bytes()
+                  for p in (root / 'src/rhythm_dnb/web/static').glob('*') if p.is_file()}
+        if any(name not in names or archive.read(name) != content for name, content in assets.items()):
+            raise ValueError('Wheel is missing or changes browser assets.')
     return len(expected)
 
 

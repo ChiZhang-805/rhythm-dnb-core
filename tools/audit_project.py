@@ -16,7 +16,7 @@ from statistics import NormalDist
 def scan(root):
     # PSEUDOCODE: enumerate maintained files -> parse structured inputs -> record hashes and actionable findings.
     files = [path for path in root.iterdir() if path.is_file()]
-    for name in ('src', 'tests', 'tools', 'configs', 'docs', '.github'):
+    for name in ('src', 'tests', 'tools', 'configs', 'docs', '.github', 'deploy'):
         files.extend(path for path in (root / name).rglob('*') if path.is_file()
                      and '__pycache__' not in path.parts and not any(part.endswith('.egg-info') for part in path.parts))
     inventory, findings = [], []
