@@ -47,7 +47,7 @@ class WebTests(unittest.TestCase):
         predictor = FakePredictor()
         with self.client(predictor) as client:
             self.ready(client)
-            self.assertIn('文本观察室', client.get('/').text)
+            self.assertIn('文本评分', client.get('/').text)
             self.assertEqual(len(client.get('/api/schema').json()['categories']), 5)
             for category in CATEGORIES:
                 result = client.post('/api/predict', json={'category': category, 'text': '今天心情不错。'})

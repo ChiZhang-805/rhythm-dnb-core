@@ -1,8 +1,7 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-let apiBase = '', ready = false, busy = false, lastResult = null, contract = null, epoch = 0, connectionEpoch = 0;
+let apiBase = '', ready = false, busy = false, contract = null, epoch = 0, connectionEpoch = 0;
 let pollTimer = null;
-const placeholders = {emotion: '说说你今天的感受……', sleep: '说说昨晚入睡、夜间醒来或早上的状态……', diet: '说说今天的胃口、饭量或吃饭时间……', social: '说说最近与人相处时的感受……', stress: '说说最近让你有压力或轻松下来的事情……'};
 
 function status(message, error = false) {
   $('status').textContent = message;
@@ -10,7 +9,6 @@ function status(message, error = false) {
 }
 function updateButton() { $('submit').disabled = !ready || busy || !$('text').value.trim(); }
 function resetResult() {
-  lastResult = null;
   $('results').hidden = true;
   $('empty').hidden = false;
 }
@@ -28,23 +26,25 @@ async function request(path, options = {}, timeout = 90000) {
 async function connect() {
   const current = ++connectionEpoch;
   clearTimeout(pollTimer);
+  $('retry').hidden = true;
   ready = false; resetResult(); updateButton();
   try {
     const health = await request('/api/health', {}, 12000);
     if (current !== connectionEpoch) return;
-    if (health.failed) throw new Error('模型加载失败，请检查运行环境、显存和权重。');
+    if (health.failed) throw new Error('模型加载失败。');
     if (!health.ready) {
-      status('模型正在加载，页面会自动检查，请稍候……');
+      status('模型加载中……');
       pollTimer = setTimeout(connect, 5000); return;
     }
     const nextContract = await request('/api/schema', {}, 12000);
     if (current !== connectionEpoch) return;
     if (!Array.isArray(nextContract.categories) || nextContract.contract_id !== 'chinese_category_regression_17') throw new Error('这个服务不是当前文本评分模型。');
     contract = nextContract; ready = true;
-    status(apiBase ? '已连接模型服务。输入文字即可分析。' : '模型已就绪，输入文字即可分析。');
+    status('');
   } catch (error) {
     if (current !== connectionEpoch) return;
-    status(error.name === 'AbortError' ? '连接超时。可稍后重新连接，或下载本地版。' : '尚未连接可用模型。请启动本地版，或在下方填写模型服务地址。', true);
+    status(error.name === 'AbortError' ? '连接超时。' : '模型未连接。', true);
+    $('retry').hidden = false;
   }
   updateButton();
 }
@@ -64,46 +64,27 @@ function render(payload, input) {
     const track = document.createElement('div'); track.className = 'track'; track.setAttribute('role', 'meter');
     track.setAttribute('aria-label', metric.label); track.setAttribute('aria-valuenow', value.toFixed(1)); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100');
     const fill = document.createElement('div'); fill.className = 'fill'; fill.style.width = `${value}%`; track.append(fill);
-    const direction = document.createElement('div'); direction.className = 'metric-direction';
-    direction.textContent = metric.direction === 'very_bad_to_very_good' ? '分数越高，心情、质量或满意度越好' : '分数越高，该项程度越强';
-    row.append(top, track, direction); fragment.append(row);
+    row.append(top, track); fragment.append(row);
   }
   $('bars').replaceChildren(fragment);
-  $('result-context').textContent = `${definition.label} · 本次输入：${input.text}`;
-  $('timing').textContent = `实验估计 · ${payload.elapsed_seconds} 秒 · 不代表诊断或概率`;
   $('empty').hidden = true; $('results').hidden = false;
-  lastResult = {input, ...payload};
 }
 $('text').addEventListener('input', () => { ++epoch; $('count').textContent = `${Array.from($('text').value).length} / 500`; resetResult(); updateButton(); });
-$('categories').addEventListener('change', () => { ++epoch; $('text').placeholder = placeholders[category()]; resetResult(); });
+$('categories').addEventListener('change', () => { ++epoch; resetResult(); status(''); });
 $('score-form').addEventListener('submit', async (event) => {
   event.preventDefault(); if (!ready || busy) return;
   const input = {category: category(), text: $('text').value.trim()};
-  const current = ++epoch; busy = true; resetResult(); updateButton(); status('正在阅读这段文字，请稍候……');
+  const current = ++epoch; busy = true; resetResult(); updateButton(); status('分析中……');
   try {
     const payload = await request('/api/predict', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(input)});
-    if (current === epoch) { render(payload, input); status('分析完成。分数是模型的实验估计，请结合原文判断。'); }
+    if (current === epoch) { render(payload, input); status(''); }
     else status('输入已改变，请重新分析。');
   } catch (error) {
     status(error.name === 'AbortError' ? '等待超时，请稍后重试。' : error.message, true);
   } finally { busy = false; updateButton(); }
 });
-$('download').addEventListener('click', () => {
-  if (!lastResult) return;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(lastResult, null, 2)], {type: 'application/json'}));
-  const link = document.createElement('a'); link.href = url; link.download = 'rhythm-text-result.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-});
-$('connect').addEventListener('click', () => {
-  if (busy) return;
-  try {
-    const value = $('endpoint').value.trim();
-    const url = value ? new URL(value) : null;
-    const local = url && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-    if (url && (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(local && url.protocol === 'http:')))) throw new Error();
-    apiBase = url ? url.href.replace(/\/$/, '') : ''; connect();
-  } catch { status('请填写不包含密钥的 HTTPS 地址；本机可以使用 http://127.0.0.1:7860。', true); }
-});
+$('retry').addEventListener('click', () => { if (!busy) connect(); });
 (async () => {
   try { const config = await fetch('./config.json', {cache: 'no-store'}).then((r) => r.json()); apiBase = config.apiBase || ''; } catch { apiBase = ''; }
-  $('endpoint').value = apiBase; connect();
+  connect();
 })();

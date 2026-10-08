@@ -25,7 +25,7 @@ python -m rhythm_dnb.web --checkpoint models/rhythm-text-expanded --base models/
 
 默认只监听本机，单次最多 500 字符；加上提示词超过模型 512 token 上限时会要求缩短，不会偷偷截断。一次只处理一个请求，繁忙时返回提示。默认每分钟最多 30 次是服务负载上限，不是科研参数，可用 `--requests-per-minute` 修改。
 
-如部署到有 GPU 的服务器，显式设置 `--host 0.0.0.0 --allow-host 你的服务域名 --allow-origin https://chizhang-805.github.io`，再配置 HTTPS。浏览器页面的“连接设置”填写该服务地址即可；不要填写云平台密钥。跨域来源名单不是身份认证，公开服务仍应配置入口限流与费用上限。
+如部署到有 GPU 的服务器，显式设置 `--host 0.0.0.0 --allow-host 你的服务域名 --allow-origin https://chizhang-805.github.io --allow-origin https://你的服务域名`，再配置 HTTPS。公开网页的 `src/rhythm_dnb/web/static/config.json` 中 `apiBase` 填写该 HTTPS 地址；不要填写云平台密钥。本地版留空，自动连接同一台电脑。跨域来源名单不是身份认证，公开服务仍应配置入口限流与费用上限。
 
 ## 托管选择（2026-10-08 核查）
 
