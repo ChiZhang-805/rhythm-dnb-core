@@ -116,6 +116,23 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(result['event_sensitivity'], 0)
         self.assertEqual(result['events'], 1)
 
+    def test_first_event_endpoint_does_not_count_later_recurrences(self):
+        t = datetime(2025, 1, 1, 12, tzinfo=UTC)
+        events = [OutcomeEvent('p', t + timedelta(days=d), t + timedelta(days=d + 2)) for d in (3, 5)]
+        rows = [EvaluationDay('p', t, 5., 1, events[0].onset)]
+        result = event_metrics(rows, 2., consecutive=1, events=reversed(events))
+        self.assertEqual(result['events'], 1)
+        self.assertEqual(result['excluded_recurrent_events'], 1)
+        self.assertEqual(result['event_sensitivity'], 1.)
+        self.assertEqual(result['event_denominator'], 'all_registered_confirmed_first_events')
+        intervals = cluster_intervals(rows, 2., consecutive=1, repetitions=5,
+            events=events + [OutcomeEvent('unobserved', t + timedelta(days=3), t + timedelta(days=5))])
+        self.assertEqual(intervals['event_sensitivity']['valid_replicates'], 5)
+        with self.assertRaisesRegex(ValueError, 'first events'):
+            event_metrics([replace(rows[0], onset=events[1].onset)], 2., events=events)
+        with self.assertRaisesRegex(ValueError, 'recurrent positive'):
+            event_metrics(rows + [replace(rows[0], issued_at=t + timedelta(days=1), onset=events[1].onset)], 2.)
+
     def test_registry_cannot_inflate_monitoring_cohort_with_unregistered_people(self):
         from rhythm_dnb.research.calibrate import calibrate
         from rhythm_dnb.config import StudyConfig

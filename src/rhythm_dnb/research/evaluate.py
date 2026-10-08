@@ -46,10 +46,11 @@ def include_monitoring_days(rows, monitoring):
 
 
 def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=None, horizon_days=7, min_lead_hours=24, confirmation_days=2, monitoring=None):
-    # PSEUDOCODE: count unique events -> match positive alarms -> count false and unevaluable alarms.
+    # PSEUDOCODE: retain each person's first registered event -> match positive alarms -> count false and unevaluable alarms.
     monitoring = tuple(monitoring) if monitoring is not None else None
     rows = include_monitoring_days(rows, monitoring) if monitoring is not None else rows
     sequence = replay(rows, threshold, consecutive=consecutive, cooldown_days=cooldown_days)
+    excluded_recurrences = 0
     if events is not None:
         events = tuple(events)
         keys = [(e.participant_id, instant(e.onset)) for e in events]
@@ -57,6 +58,11 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
             raise ValueError('Invalid or duplicate registry events.')
         if monitoring is not None and {e.participant_id for e in events} - {p.participant_id for p in monitoring}:
             raise ValueError('Event registry contains people outside the registered monitoring cohort.')
+        first_events = {}
+        for event in sorted(events, key=lambda e: instant(e.onset)):
+            first_events.setdefault(event.participant_id, event)
+        excluded_recurrences = len(events) - len(first_events)
+        events = tuple(first_events.values())
     for row, _, _ in sequence:
         if row.label_available_at is not None and row.label is not None:
             required = instant(row.onset) if row.label == 1 else instant(row.issued_at) + timedelta(days=horizon_days + confirmation_days)
@@ -71,10 +77,12 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
             if row.label == 1 and row.label_available_at is not None and any(instant(e.confirmed_at) > instant(row.label_available_at) for e in relevant if instant(e.onset) == instant(row.onset)):
                 raise ValueError('Positive label predates registry confirmation.')
     observable_events = {(r.participant_id, instant(r.onset)) for r, _, _ in sequence if r.label == 1}
-    denominator = 'all_registered_confirmed_events' if events is not None else 'events_with_evaluable_forecast_labels'
+    denominator = 'all_registered_confirmed_first_events' if events is not None else 'events_with_evaluable_forecast_labels'
     event_keys = {(e.participant_id, instant(e.onset)) for e in events} if events is not None else observable_events
     if not observable_events <= event_keys:
-        raise ValueError('Evaluation labels refer to events absent from the locked registry.')
+        raise ValueError('Evaluation labels do not match first events in the locked registry.')
+    if len({person for person, _ in observable_events}) != len(observable_events):
+        raise ValueError('First-event evaluation cannot contain recurrent positive outcomes for one person.')
     detected, leads = set(), []
     true_alarms = false_alarms = unknown_alarms = 0
     valid_risk_days = sum(r.score is not None and r.label is not None for r, _, _ in sequence)
@@ -92,6 +100,7 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
         else:
             unknown_alarms += 1
     result = {'events': len(event_keys), 'detected_events': len(detected), 'event_denominator': denominator,
+              'excluded_recurrent_events': excluded_recurrences,
               'events_with_evaluable_labels': len(observable_events),
               'event_sensitivity': len(detected) / len(event_keys) if event_keys else None,
               'false_alarms': false_alarms, 'true_alarms': true_alarms, 'unknown_alarms': unknown_alarms,
