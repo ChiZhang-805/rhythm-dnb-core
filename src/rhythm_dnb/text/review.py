@@ -11,8 +11,28 @@ def review_guide():
     # PSEUDOCODE: expose scale endpoints and scope questions without revealing any previous numerical answer.
     endpoints = {'absent_to_extreme': ['明确没有该感受或症状', '该指标的极强端点'],
         'very_bad_to_very_good': ['非常差', '非常好'], 'none_to_strong': ['完全没有意愿', '非常强的意愿']}
+    scope = {
+        'mood_valence': ('本人适用时段内的总体心情方向；有明确中性表述才可判断为中性。', '不能用愉快减悲伤自动计算；信息不足不填 50。'),
+        'joy_intensity': ('本人表达的开心、愉悦或喜悦有多强。', '没有坏事不代表开心；悲伤与愉快可同时存在。'),
+        'sadness_intensity': ('本人表达的悲伤、失落或难过有多强。', '不开心不一定是悲伤；转述他人的悲伤不计入。'),
+        'anxiety_intensity': ('本人表达的担忧、紧张或不安有多强。', '不能把所有压力、恐惧或忙碌直接换成焦虑程度。'),
+        'irritability_intensity': ('本人表达的烦躁、不耐烦或易受激惹有多强。', '描述冲突或生气事件不自动证明本人持续烦躁。'),
+        'stress_intensity': ('本人感到要求、负担或应对压力有多强。', '任务多、日程满不自动等于主观压力高。'),
+        'appetite_loss_intensity': ('本人进食欲望下降或难以产生食欲的程度。', '吃得少可能由时间、供应或主动控制造成，不能自动算食欲差。'),
+        'excess_intake_intensity': ('原文明确表达本人吃得过多、超出需要或失控进食的程度。', '单个食物名称或份量没有个人参照时，不能自行判定过量。'),
+        'meal_irregularity_intensity': ('本人在文字中明确描述的进餐时间不稳定、随意变动或紊乱程度。', '稳定晚吃与多日时间漂移不同；单个钟点不能证明不规律。'),
+        'sleep_quality': ('本人对目标睡眠段整体睡得好坏的主观评价。', '只知道入睡速度、时长或醒来次数时，不自动补全总体质量。'),
+        'sleep_onset_difficulty': ('本人目标睡眠段从准备睡觉到入睡的困难程度。', '晚睡、主动熬夜、他人睡不着或睡后中断不自动等于入睡困难。'),
+        'sleep_disruption_intensity': ('本人目标睡眠段入睡后醒来、反复中断或难以再睡的程度。', '入睡前难睡或正常起床不能自动算睡眠中断。'),
+        'post_sleep_fatigue': ('本人从目标睡眠段醒来后的疲劳、乏力或未恢复感。', '白天工作后累或睡前疲劳不能自动算醒后疲劳。'),
+        'social_willingness': ('本人在适用时段想要或愿意与人互动的程度。', '实际见了几个人不等于愿意社交；没有机会也不等于没有意愿。'),
+        'social_satisfaction': ('本人对目标互动或关系体验感到满意的程度。', '互动多、对方评价好或独处，不能自动证明本人满意或不满意。'),
+        'loneliness_intensity': ('本人感到孤独、缺少连接或无人理解的程度。', '独处、朋友少不一定孤独；热闹中也可能孤独。'),
+        'social_burden_intensity': ('本人感到互动带来负担、消耗或勉强应付的程度。', '社交少或偏好独处不自动等于社交负担高。'),
+    }
     return {'metrics': [{'key': key, 'category': category, 'label': label, 'zero': endpoints[direction][0],
-            'hundred': endpoints[direction][1]} for key, category, label, direction in METRICS],
+            'hundred': endpoints[direction][1], 'meaning': scope[key][0], 'do_not_infer': scope[key][1]}
+            for key, category, label, direction in METRICS],
         'states': {'supported': '有本人、对应时段的依据，并给出程度分数',
             'supported_unscored': '有依据，但程度未定；分数留空', 'explicit_absence': '症状明确不存在；仅适用程度量表零端点',
             'insufficient_evidence': '原文无法判断；分数留空', 'unreviewed': '尚未完成；分数留空', 'disputed': '仍有分歧；分数留空'},
@@ -20,6 +40,9 @@ def review_guide():
             '哪些原文提供依据，哪些片段应排除？', '能否确定程度？不能时不要猜分或填中间值。'],
         'rules': ['不从情绪好坏推断所有情绪强度；悲伤和愉快可同时存在。',
             '主观睡眠质量不等于跨日节律稳定；缺少多日证据时不推断规律性。',
+            '先固定本人及目标时段；已经缓解的过去状态不与当前状态取平均。时间或人物无法确定时留空。',
+            '量表是文本表达程度的研究约定；不是临床诊断、发生概率或由关键词直接查出的分数。',
+            '只有顺序或有无依据、不能确定具体程度时，用 supported_unscored；不要为凑齐指标猜分。',
             '两名标注者先独立填写，再由仲裁解决分歧；不可看旧分数互相迁就。'],
         'intervals_are_not_clinical_cutoffs': True, 'independent_review_completed': False}
 

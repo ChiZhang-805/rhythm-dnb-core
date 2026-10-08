@@ -78,7 +78,7 @@ python -m rhythm_dnb plot-text --result "$DNB_ROOT/runs/text-training/result.jso
 
 本次正则候选为 `0.0001 0.001 0.01 0.1 1`，实验目标为 `--target-precision 0.95`；目标不是已经达到的总体保证。自编正负均衡语料上的表现不能代替正式独立校准。训练需要 `research` 依赖；提取表示使用 GPU，线性判断器拟合使用 CPU。
 
-双人复核可用 `export-review-sheet --packet rater-A.json --output rater-A.xlsx` 导出空表，填完后用 `import-review-sheet --packet rater-A.json --workbook rater-A.xlsx --output completed-A.json` 导入。两人分别填写各自的 A/B 表，再交给 `compare-text-reviews`；工具检查身份声明和原文依据，不替人完成复核。
+双人复核可用 `export-review-sheet --packet rater-A.json --output rater-A.xlsx` 导出空表，填完后用 `import-review-sheet --packet rater-A.json --workbook rater-A.xlsx --output completed-A.json` 导入。表内逐项说明评分对象和不能直接推断的情况，例如吃得少不一定食欲差、独处不一定孤独；没有足够程度信息就留空。两人分别填写各自的 A/B 表，再交给 `compare-text-reviews`；工具检查身份声明和原文依据，不替人完成复核。
 
 当冻结表示上的依据分类器无法区分复杂对话时，可用 `train-evidence-adapter --corpus development.json --checkpoint 原评分模型 --base 基模 --config 配置.json --output-dir 新训练目录` 单独学习上下文。它只接收显式依据标签，全部程度分数必须为空，17 项在训练和验证中均须有正负例；配置要求 `evidence_loss_weight=1`、`scope_loss_weight=0`、`train_experimental_evidence=true`。使用 `research,text,quantized` 依赖。
 

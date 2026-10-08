@@ -54,11 +54,14 @@ def export_review_sheet(packet, path):
         cells[0].alignment = Alignment(wrap_text=True)
     from .review import review_guide
     scales = workbook.create_sheet('分数方向')
-    scales.append(['指标', '0 分含义', '100 分含义'])
+    scales.append(['指标', '0 分含义', '100 分含义', '评分对象', '不能直接推断的情况'])
     for metric in review_guide()['metrics']:
-        scales.append([metric['label'], metric['zero'], metric['hundred']])
-    for column in 'ABC':
-        scales.column_dimensions[column].width = 32
+        scales.append([metric['label'], metric['zero'], metric['hundred'], metric['meaning'], metric['do_not_infer']])
+    for column, width in zip('ABCDE', (24, 24, 24, 60, 60)):
+        scales.column_dimensions[column].width = width
+    for cells in scales:
+        for cell in cells:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
     workbook.save(path)
     return {'path': str(path), 'cases': len(packet['rows']), 'metric_rows': sheet.max_row-1, 'human_reviews_completed': 0}
 
