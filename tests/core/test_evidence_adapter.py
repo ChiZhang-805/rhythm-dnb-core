@@ -7,7 +7,8 @@ import tempfile
 import unittest
 import torch
 from rhythm_dnb.provenance import fingerprint, file_hash
-from rhythm_dnb.text.schema import CATEGORIES
+from rhythm_dnb.text.schema import CATEGORIES, METRICS
+from rhythm_dnb.text.labels import evidence_target
 from rhythm_dnb.text.evidence_adapter import prepare_evidence, train_evidence, evaluate_evidence, EvidenceAdapter, refine_evidence_thresholds
 
 
@@ -25,6 +26,22 @@ def evidence_fixture(parent, roles=('train', 'validation')):
 
 
 class EvidenceAdapterTests(unittest.TestCase):
+    def test_zero_false_acceptances_do_not_hide_zero_supported_recall(self):
+        from rhythm_dnb.text.evidence_adapter import evidence_report
+        rows = evidence_fixture('parent', ('test',))['rows']
+        predictions = [{'evidence': {k: .9 if evidence_target(r, k) else .8 for k in r['scores']}} for r in rows]
+        thresholds = {k: .95 for k, *_ in METRICS}
+        report = evidence_report(rows, predictions, thresholds=thresholds)
+        self.assertEqual(report['false_acceptances'], 0)
+        self.assertEqual(report['supported_recall'], 0.)
+        self.assertEqual(report['macro_supported_recall'], 0.)
+        self.assertEqual(set(report['heads_with_no_supported_acceptance']), set(thresholds))
+        self.assertEqual(report['heads_without_both_reference_classes'], [])
+        self.assertFalse(report['automatic_model_promotion'])
+        emotion_only = [i for i, r in enumerate(rows) if r['category'] == 'emotion']
+        report = evidence_report([rows[i] for i in emotion_only], [predictions[i] for i in emotion_only], thresholds=thresholds)
+        self.assertIn('stress_intensity', report['heads_without_both_reference_classes'])
+
     def test_individually_balanced_heads_do_not_hide_missing_partial_evidence(self):
         from rhythm_dnb.text.review import evidence_support_coverage
         rows = evidence_fixture('parent')['rows']

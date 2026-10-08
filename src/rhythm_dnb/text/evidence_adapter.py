@@ -38,10 +38,19 @@ def evidence_report(rows, predictions, *, thresholds=None, target_precision=None
     available = [h for h in heads.values() if h['n']]
     if not available:
         raise ValueError('Evidence report has no explicit known labels.')
+    positives, negatives = sum(h['positive'] for h in available), sum(h['negative'] for h in available)
+    accepted_supported = sum(h['accepted_supported'] for h in available)
+    false_acceptances = sum(h['false_acceptances'] for h in available)
     return {'heads': heads, 'families': families, 'macro_log_loss': float(np.mean([h['log_loss'] for h in available])),
             'macro_brier': float(np.mean([h['brier'] for h in available])),
-            'false_acceptances': sum(h['false_acceptances'] for h in available),
+            'false_acceptances': false_acceptances,
             'missed_supported': sum(h['missed_supported'] for h in available),
+            'supported_recall': accepted_supported / positives if positives else None,
+            'false_acceptance_rate': false_acceptances / negatives if negatives else None,
+            'macro_supported_recall': float(np.mean([h['supported_recall'] for h in available if h['positive']])) if positives else None,
+            'heads_with_no_supported_acceptance': [k for k, h in heads.items() if h.get('positive', 0) and not h['accepted_supported']],
+            'heads_without_both_reference_classes': [k for k, h in heads.items() if not h.get('positive') or not h.get('negative')],
+            'automatic_model_promotion': False,
             'evidence_calibrated': False, 'independent_human_gold': False}
 
 
