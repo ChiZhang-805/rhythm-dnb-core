@@ -26,10 +26,10 @@ rhythm-dnb-core/
 
 ```sh
 cd /workspace/rhythm-dnb-core
-bash runs/acceptance-delivery/score-text.sh emotion '今天和朋友见面很开心，心情比昨天放松。'
+bash runs/precision-delivery/score-text.sh emotion '今天和朋友见面很开心，心情比昨天放松。'
 ```
 
-命令会打印结果文件路径；它使用已核验的源码和模型，GPU 忙时会排队。
+命令会打印结果文件路径；它使用已核验的源码和模型，程度推理固定为 FP32，GPU 忙时会排队。
 
 自行部署到其他服务器时，在最新源码根目录和已激活的 Python 环境中执行（首次使用才需要安装）：
 
@@ -39,12 +39,12 @@ python -m rhythm_dnb score-text-experiment \
   --checkpoint models/rhythm-text-expanded --base models/qwen3-8b \
   --evidence-checkpoint models/rhythm-text-evidence-policy \
   --category emotion --text '今天和朋友见面很开心，心情比昨天放松。' \
-  --device cuda --output runs/text-score.json
+  --device cuda --precision fp32 --output runs/text-score.json
 ```
 
 更换 `--text` 后的内容即可分析自己的中文文本；更换输出文件名可保留上一次结果。长文本应先整理为同一人、同一时段的描述，超过模型长度限制会报错。
 
-最新源码可加 `--precision fp32`，显式固定程度模型的计算精度；不改权重，也不改独立依据附件的原设置。默认 `auto` 保持原行为。输出的 `inference_profile` 和 `evidence_inference_profile` 分别记录两者的精度、环境及身份。研究中应固定设置，不把不同计算方式的分数直接混成个人时间序列；改变后须重新检查。旧的服务器脚本仍按原设置运行。
+`--precision fp32` 显式固定程度模型的计算精度；不改权重，也不改独立依据附件的原设置。重现旧实验可选 `auto`，也是未指定时的默认行为。输出的 `inference_profile` 和 `evidence_inference_profile` 分别记录两者的精度、环境及身份。研究中应固定设置，不把不同计算方式的分数直接混成个人时间序列；改变后须重新检查。
 
 `--category` 可选：`emotion`（情绪）、`sleep`（睡眠）、`diet`（饮食）、`social`（社交）、`stress`（压力，辅助实验项）。
 
