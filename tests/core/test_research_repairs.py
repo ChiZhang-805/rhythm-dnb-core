@@ -209,7 +209,33 @@ class ResearchRepairsTests(unittest.TestCase):
         self.assertEqual(report['gap_hours_maximum'], 48.)
         self.assertEqual(report['direction_agreement_on_nonzero_reference_changes'], 1.)
         self.assertEqual(report['mae'], 15.)
+        self.assertEqual(report['person_macro_change_mae'], 15.)
+        self.assertAlmostEqual(report['person_macro_level_mae'], 20. / 3)
         with self.assertRaisesRegex(ValueError, 'one prediction'): longitudinal_report(rows, predictions[:-1])
+
+    def test_change_error_weights_people_and_separates_levels_and_time_sources(self):
+        rows, predictions = [], []
+        for person, reference, estimated, basis in (
+            ('offset', [10., 20., 30., 40.], [20., 30., 40., 50.], 'authored_timeline'),
+            ('flat', [0., 40.], [20., 20.], 'source_record_timestamp_for_authored_text')):
+            for i, (truth, estimate) in enumerate(zip(reference, estimated)):
+                row = record(person + str(i), value=truth)
+                row.update(participant_id=person, observed_at=f'2026-01-0{i+1}T12:00:00+00:00', temporal_basis=basis)
+                rows.append(row); predictions.append({'scores': {'stress_intensity': estimate}})
+        unrelated = record('unrelated', category='sleep', value=20.)
+        unrelated.update(observed_at='2026-01-01T12:00:00+00:00', temporal_basis='unrelated_timestamp')
+        rows.append(unrelated); predictions.append({'scores': unrelated['scores']})
+        report = longitudinal_report(rows, predictions)['stress_intensity']
+        self.assertEqual(report['mae'], 10.)  # Three unchanged differences and one 40-point change error.
+        self.assertEqual(report['person_macro_change_mae'], 20.)
+        self.assertEqual(report['person_macro_level_mae'], 15.)
+        self.assertEqual({p['participant_id']: p['mae'] for p in report['per_person_changes']}, {'offset': 0., 'flat': 40.})
+        self.assertNotIn('unrelated_timestamp', report['temporal_bases'])
+
+    def test_error_summary_rejects_matrices_and_scalars(self):
+        from rhythm_dnb.text.evaluate import errors
+        for value in (1., [], [[1., 2.], [3., 4.]]):
+            with self.assertRaises(ValueError): errors(value, value)
 
     def test_sensitivity_freezes_target_definition(self):
         base = StudyConfig()

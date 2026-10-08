@@ -25,7 +25,7 @@ def average_ranks(values):
 def errors(truth, predicted):
     # PSEUDOCODE: validate paired scores -> report error, ordering, agreement and retained variation.
     truth, predicted = np.asarray(truth, dtype=float), np.asarray(predicted, dtype=float)
-    if not len(truth) or truth.shape != predicted.shape or not np.isfinite(truth).all() or not np.isfinite(predicted).all():
+    if truth.ndim != 1 or predicted.ndim != 1 or not truth.size or truth.shape != predicted.shape or not np.isfinite(truth).all() or not np.isfinite(predicted).all():
         raise ValueError('Evaluation needs matching finite nonempty values.')
     residual = predicted - truth
     a, b = average_ranks(truth), average_ranks(predicted)
@@ -67,20 +67,25 @@ def longitudinal_report(rows, predictions):
     from ..timebase import instant
     if len(rows) != len(predictions):
         raise ValueError('Every longitudinal row must have one prediction.')
-    grouped = defaultdict(list)
+    grouped, bases = defaultdict(list), defaultdict(set)
     for row, prediction in zip(rows, predictions):
         if row.get('observed_at') is not None:
             for key, value in row['scores'].items():
                 if value is not None:
                     grouped[(row['participant_id'], key)].append((instant(row['observed_at']), value, prediction['scores'][key]))
+                    bases[(row['participant_id'], key)].add(row.get('temporal_basis', 'unspecified'))
     true_changes, predicted_changes, people = defaultdict(list), defaultdict(list), defaultdict(set)
-    per_person, gaps = defaultdict(list), defaultdict(list)
+    per_person_levels, per_person_changes, gaps = defaultdict(list), defaultdict(list), defaultdict(list)
+    metric_bases = defaultdict(set)
     for (person, key), values in grouped.items():
         values.sort()
         if len({v[0] for v in values}) != len(values):
             raise ValueError('Longitudinal evaluation requires distinct observation times per person and metric.')
         if len(values) >= 2:
-            per_person[key].append({'participant_id': person, **errors([v[1] for v in values], [v[2] for v in values])})
+            per_person_levels[key].append({'participant_id': person, **errors([v[1] for v in values], [v[2] for v in values])})
+            changes = np.diff(np.asarray([[v[1], v[2]] for v in values]), axis=0)
+            per_person_changes[key].append({'participant_id': person, **errors(changes[:, 0], changes[:, 1])})
+            metric_bases[key].update(bases[(person, key)])
         for previous, current in zip(values, values[1:]):
             true_changes[key].append(current[1] - previous[1])
             predicted_changes[key].append(current[2] - previous[2])
@@ -93,9 +98,12 @@ def longitudinal_report(rows, predictions):
         result[key] = {'people': len(people[key]), **errors(values, predicted),
             'direction_agreement_on_nonzero_reference_changes': float(np.mean(np.sign(predicted[changing]) == np.sign(reference[changing]))) if changing.any() else None,
             'nonzero_reference_changes': int(changing.sum()), 'gap_hours_minimum': min(gaps[key]), 'gap_hours_maximum': max(gaps[key]),
-            'per_person': per_person[key], 'person_macro_mae': float(np.mean([p['mae'] for p in per_person[key]])),
+            'per_person_levels': per_person_levels[key], 'per_person_changes': per_person_changes[key],
+            'person_macro_level_mae': float(np.mean([p['mae'] for p in per_person_levels[key]])),
+            'person_macro_change_mae': float(np.mean([p['mae'] for p in per_person_changes[key]])),
+            'aggregation': 'pooled change errors weight observation pairs; person-macro errors weight each person equally',
             'pair_definition': 'successive labeled observations; unequal gaps are reported, not assumed daily',
-            'temporal_bases': sorted({r.get('temporal_basis', 'unspecified') for r in rows if r.get('observed_at')})}
+            'temporal_bases': sorted(metric_bases[key])}
     return result
 
 
