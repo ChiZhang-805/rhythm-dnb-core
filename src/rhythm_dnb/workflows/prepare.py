@@ -60,8 +60,8 @@ def quantify_day(observations, participant_id, day, zone, issued_at, *,
     if main:
         # Assign the whole completed main sleep to its awakening day, including earlier segments.
         within_main = [r for r in observations if r.participant_id == participant_id and r.timezone == zone
-                       and r.variable == 'sleep_episode' and instant(main[0].start) <= instant(r.start)
-                       and instant(r.end) <= instant(main[0].end) and available_as_of(r, cutoff, issued_at)]
+                       and r.variable == 'sleep_episode' and instant(main[0].start) < instant(r.end)
+                       and instant(r.start) < instant(main[0].end) and available_as_of(r, cutoff, issued_at)]
         sleeps = list({r.observation_id: r for r in sleeps + within_main}.values())
     if any(r.unit != 'state' or type(r.value) not in (int, float) or r.value != 1 for r in sleeps + duration_sources):
         raise ValueError('Sleep episodes must be explicit asleep-state intervals.')

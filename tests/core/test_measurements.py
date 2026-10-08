@@ -83,6 +83,18 @@ class MeasurementTests(unittest.TestCase):
         self.assertEqual(sleep_regularity_index(day + [1 - x for x in day], 24), -100)
         self.assertIsNone(sleep_regularity_index(day + [np.nan] * 24, 24))
 
+    def test_main_sleep_boundaries_cannot_split_observed_sleep(self):
+        start = datetime(2025, 1, 1, 22, tzinfo=UTC)
+        intervals = [(start, start + timedelta(hours=3)), (start + timedelta(hours=4), start + timedelta(hours=8))]
+        for main in ((start, start + timedelta(hours=7)), (start + timedelta(hours=1), start + timedelta(hours=8))):
+            with self.subTest(main=main), self.assertRaisesRegex(ValueError, 'cut through'):
+                daily_sleep(intervals, 'UTC', main_period=main)
+        # A separate nap outside the identified main sleep remains valid.
+        with_nap = intervals + [(start + timedelta(hours=14), start + timedelta(hours=15))]
+        result = daily_sleep(with_nap, 'UTC', main_period=(start, start + timedelta(hours=8)))
+        self.assertEqual(result['sleep_midpoint_h'], 2.)
+        self.assertEqual(result['sleep_duration_h'], 8.)
+
     def test_caloric_order_crosses_midnight(self):
         first = datetime(2025, 1, 1, 22, tzinfo=UTC)
         events = [(first, 10), (first + timedelta(hours=3), 40), (first + timedelta(hours=4), 0)]

@@ -120,6 +120,15 @@ class ReviewRegressions(unittest.TestCase):
         self.assertIsNone(duration.value)
         self.assertIsNotNone(duration.reason)
 
+    def test_prior_day_sleep_cannot_be_hidden_by_an_incorrect_main_boundary(self):
+        start = datetime(2025, 1, 1, 22, tzinfo=UTC)
+        rows = [self.observation('early', start, start + timedelta(hours=3)),
+                self.observation('late', start + timedelta(hours=4), start + timedelta(hours=8)),
+                self.observation('main', start + timedelta(hours=1), start + timedelta(hours=8), 'main_sleep_period', None, 'interval')]
+        with self.assertRaisesRegex(ValueError, 'cut through'):
+            prepare_day(rows, 'p', date(2025, 1, 2), 'UTC', datetime(2025, 1, 3, 12, tzinfo=UTC),
+                        panel_id='objective8', sleep_complete=True)
+
     def test_mixed_simulation_and_real_lineage_is_ineligible(self):
         p = build_lineage([Provenance('observed', 'real', 'a'), Provenance('synthetic', 'sim', 'b')], 'combined')
         self.assertFalse(eligible_measurement(p))

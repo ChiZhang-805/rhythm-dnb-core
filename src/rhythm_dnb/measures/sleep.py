@@ -26,6 +26,8 @@ def daily_sleep(episodes, zone, *, main_period=None):
         a, b = map(instant, main_period)
         if b <= a or (b - a).total_seconds() > 86400 or not any(a <= start < end <= b for start, end in periods):
             raise ValueError('Main sleep period must contain measured sleep and last at most 24 hours.')
+        if any(max(a, start) < min(b, end) and (start < a or end > b) for start, end in periods):
+            raise ValueError('Main sleep boundaries cannot cut through a measured asleep interval.')
     elif len(periods) == 1:
         a, b = periods[0]
     else:
