@@ -22,7 +22,16 @@ rhythm-dnb-core/
 
 使用已配置 CUDA/PyTorch 的 NVIDIA GPU 环境；本次在 A40 上验证。原来约 4 GB 内存的 CPU 服务器可以保存文件，不能直接运行这份 NF4 模型。
 
-在项目根目录、已激活的 Python 环境中执行（首次使用才需要安装）：
+当前 Runpod 已配置好，直接执行：
+
+```sh
+cd /workspace/rhythm-dnb-core
+bash runs/acceptance-delivery/score-text.sh emotion '今天和朋友见面很开心，心情比昨天放松。'
+```
+
+命令会打印结果文件路径；它使用已核验的源码和模型，GPU 忙时会排队。
+
+自行部署到其他服务器时，在最新源码根目录和已激活的 Python 环境中执行（首次使用才需要安装）：
 
 ```sh
 python -m pip install -e ".[text,quantized]" -c requirements-text.lock

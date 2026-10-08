@@ -1,9 +1,38 @@
-"""External ordinal emotion diagnostics without inventing a conversion to personal 0-100 scores."""
+"""External emotion and stress diagnostics without inventing personal 0-100 reference scores."""
 
 import math
 import numpy as np
 
 MAPPING = {'joy': 'joy_intensity', 'sadness': 'sadness_intensity'}
+
+
+def binary_stress_report(rows, predictions):
+    # PSEUDOCODE: verify aligned binary stress references -> evaluate score ranking without selecting a threshold or changing label scale.
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    if not rows or len(rows) != len(predictions) or len({r['example_id'] for r in rows}) != len(rows):
+        raise ValueError('External stress evaluation requires unique aligned records.')
+    for row, prediction in zip(rows, predictions):
+        if (row.get('external_scale') != 'binary_stress' or row.get('category') != 'stress'
+                or type(row.get('external_reference')) is not int or row['external_reference'] not in (0, 1)
+                or not isinstance(row.get('group_id'), str) or not row['group_id'].strip()
+                or prediction.get('example_id') != row['example_id']):
+            raise ValueError('Stress references must retain binary labels, source groups and exact prediction identities.')
+        score = prediction.get('estimate')
+        if type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 100:
+            raise ValueError('Stress estimates must be finite values on the project 0-100 scale.')
+    truth = np.asarray([r['external_reference'] for r in rows])
+    scores = np.asarray([p['estimate'] for p in predictions])
+    both_classes = len(set(truth)) == 2
+    return {'metric': 'stress_intensity', 'n': len(rows), 'source_groups': len({r['group_id'] for r in rows}),
+        'positive': int(truth.sum()), 'negative': int((truth == 0).sum()), 'prevalence': float(truth.mean()),
+        'roc_auc': float(roc_auc_score(truth, scores)) if both_classes else None,
+        'average_precision': float(average_precision_score(truth, scores)) if both_classes else None,
+        'score_by_label': {str(label): {'n': int((truth == label).sum()),
+            'quartiles': np.quantile(scores[truth == label], [.25, .5, .75]).tolist() if (truth == label).any() else None}
+            for label in (0, 1)},
+        'scale_conversion': None, 'degree_mae': None, 'clinical_accuracy': None, 'threshold_selected': False,
+        'interpretation': 'external binary stress ranking; does not validate 0-100 degrees, Chinese transfer or longitudinal changes',
+        'participant_independence_verified': False, 'base_pretraining_exposure': 'unknown'}
 
 
 def ordinal_emotion_report(rows, predictions):

@@ -2,10 +2,35 @@
 
 import copy
 import unittest
-from rhythm_dnb.text.external import ordinal_emotion_report
+from rhythm_dnb.text.external import ordinal_emotion_report, binary_stress_report
 
 
 class ExternalEmotionTests(unittest.TestCase):
+    def test_binary_stress_keeps_ranking_distinct_from_degree_accuracy(self):
+        rows = [{'example_id': str(i), 'category': 'stress', 'external_scale': 'binary_stress',
+                 'external_reference': i//2, 'group_id': str(i//2)} for i in range(4)]
+        predictions = [{'example_id': str(i), 'estimate': 51.+i} for i in range(4)]
+        report = binary_stress_report(rows, predictions)
+        self.assertEqual(report['roc_auc'], 1.)
+        self.assertEqual(report['source_groups'], 2)
+        self.assertIsNone(report['degree_mae'])
+        self.assertIsNone(report['clinical_accuracy'])
+        self.assertFalse(report['threshold_selected'])
+        with self.assertRaises(ValueError): binary_stress_report(rows, list(reversed(predictions)))
+        changed = copy.deepcopy(rows); changed[-1]['external_reference'] = 100
+        with self.assertRaises(ValueError): binary_stress_report(changed, predictions)
+
+    def test_binary_stress_degenerate_labels_and_invalid_scores(self):
+        rows = [{'example_id': str(i), 'category': 'stress', 'external_scale': 'binary_stress',
+                 'external_reference': 0, 'group_id': str(i)} for i in range(2)]
+        predictions = [{'example_id': str(i), 'estimate': 40.} for i in range(2)]
+        self.assertIsNone(binary_stress_report(rows, predictions)['roc_auc'])
+        rows[1]['external_reference'] = 1
+        self.assertEqual(binary_stress_report(rows, predictions)['roc_auc'], .5)
+        for score in (float('nan'), float('inf'), True, -1., 101.):
+            with self.subTest(score=score), self.assertRaises(ValueError):
+                binary_stress_report(rows, [predictions[0], {'example_id':'1', 'estimate':score}])
+
     def test_perfect_presence_does_not_imply_correct_intensity_ordering(self):
         labels = [0, 0, 0, 1, 2, 3]
         scores = [0., 0., 0., 90., 60., 30.]
