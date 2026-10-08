@@ -26,18 +26,21 @@ def binary_metrics(labels, probabilities):
 
 
 def choose_empirical_threshold(labels, probabilities, target_precision, *, boundary='observed'):
-    # PSEUDOCODE: choose greatest validation coverage meeting a declared empirical target; never claim certification.
+    # PSEUDOCODE: meet validation precision -> maximize supported recall -> reject extra false acceptances that add no supported cases.
     if type(target_precision) not in (float, int) or not 0 < target_precision < 1:
         raise ValueError('Declare the experimental validation precision target explicitly.')
     if boundary not in ('observed', 'validation_gap_midpoint'):
         raise ValueError('Unknown evidence threshold boundary rule.')
     labels, probabilities = np.asarray(labels), np.asarray(probabilities)
     binary_metrics(labels, probabilities)
-    selected = None
+    selected, best = None, None
     for threshold in sorted(set(probabilities.tolist()), reverse=True):
         accepted = probabilities >= threshold
         if labels[accepted].mean() >= target_precision:
-            selected = float(threshold)
+            correct = int(labels[accepted].sum())
+            objective = (correct, -int(accepted.sum() - correct))
+            if best is None or objective > best:
+                selected, best = float(threshold), objective
     if selected is not None and boundary == 'validation_gap_midpoint':
         rejected = probabilities[probabilities < selected]
         if not len(rejected):

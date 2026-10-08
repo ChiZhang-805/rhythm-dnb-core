@@ -173,7 +173,7 @@ def train_evidence(payload, checkpoint, base, output_dir, config, *, initialize_
         protocol = {'config': config, 'dataset': corpus, 'parent_scoring_checkpoint_id': identity,
             'evidence_initialization': continuation,
             'execution': execution, 'signature': signature, 'selection_metric': 'validation_macro_log_loss',
-            'threshold_selection': 'validation_empirical_precision_with_gap_midpoint', 'evidence_calibrated': False,
+            'threshold_selection': 'validation_supported_recall_then_fewer_false_acceptances_with_gap_midpoint', 'evidence_calibrated': False,
             'score_model_modified': False, 'numeric_outputs_from_this_adapter_valid': False,
             'head_initialization': 'preserved previous evidence heads' if continuation else 'zero weights; training evidence class log odds',
             'category_loss_weights': weights}
@@ -224,7 +224,7 @@ def train_evidence(payload, checkpoint, base, output_dir, config, *, initialize_
 
 
 def refine_evidence_thresholds(payload, checkpoint, base, output_dir, *, device='cuda'):
-    # PSEUDOCODE: use exactly the original validation rows -> center equivalent decision gaps -> copy unchanged weights with explicit lineage.
+    # PSEUDOCODE: retain original validation recall while removing dominated cutoffs -> center the gap -> copy unchanged weights with lineage.
     import shutil
     from .checkpoint import load_checkpoint
     from .train import predict_rows
@@ -239,9 +239,9 @@ def refine_evidence_thresholds(payload, checkpoint, base, output_dir, *, device=
     previous = evidence_report(partitions['validation'], predictions, thresholds=manifest['thresholds'])
     updated = evidence_report(partitions['validation'], predictions, target_precision=manifest['config']['evidence_precision'],
                               threshold_boundary='validation_gap_midpoint')
-    if any(previous['heads'][k]['accepted'] != updated['heads'][k]['accepted'] or
-           previous['heads'][k]['false_acceptances'] != updated['heads'][k]['false_acceptances'] for k in previous['heads']):
-        raise ValueError('A threshold boundary refinement must preserve validation decisions exactly.')
+    if any(previous['heads'][k]['accepted_supported'] != updated['heads'][k]['accepted_supported'] or
+           previous['heads'][k]['false_acceptances'] < updated['heads'][k]['false_acceptances'] for k in previous['heads']):
+        raise ValueError('Threshold refinement must preserve supported validation recall without adding false acceptances.')
     destination = Path(output_dir).resolve(); source = Path(checkpoint).resolve()
     if destination.is_relative_to(source):
         raise ValueError('Threshold refinement output must be outside the original checkpoint.')
@@ -251,9 +251,13 @@ def refine_evidence_thresholds(payload, checkpoint, base, output_dir, *, device=
         shutil.copyfile(source/name, path)
     refinement = {'source_checkpoint_id': identity, 'validation_id': fingerprint(partitions['validation']),
         'boundary': 'validation_gap_midpoint', 'test_used': False, 'weights_changed': False,
-        'validation_decisions_changed': False, 'evidence_calibrated': False}
+        'selection_objective': 'maximum_supported_recall_then_minimum_false_acceptances_at_target_precision',
+        'validation_supported_recall_preserved': True,
+        'validation_false_acceptances_removed': previous['false_acceptances'] - updated['false_acceptances'],
+        'validation_decisions_changed': previous['false_acceptances'] != updated['false_acceptances'],
+        'evidence_calibrated': False}
     (destination/'manifest.json').write_text(canonical_json({**manifest, 'threshold_refinement': refinement,
-        'threshold_selection': 'validation_empirical_precision_with_gap_midpoint', 'validation': updated,
+        'threshold_selection': 'validation_supported_recall_then_fewer_false_acceptances_with_gap_midpoint', 'validation': updated,
         'thresholds': {k: v['threshold'] for k, v in updated['heads'].items()}}), encoding='utf-8')
     _, final_identity = _inspect_evidence(destination)
     return {**refinement, 'checkpoint': str(destination), 'checkpoint_id': final_identity}

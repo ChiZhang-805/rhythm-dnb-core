@@ -147,7 +147,7 @@ def main(argv=None):
     evidence_test.add_argument('--base', required=True); evidence_test.add_argument('--output-dir', required=True)
     evidence_test.add_argument('--device', choices=('auto','cpu','cuda'), default='cuda')
     evidence_test.add_argument('--regression-only', action='store_true')
-    evidence_policy = sub.add_parser('refine-evidence-thresholds', help='Center validation-equivalent threshold gaps without retraining')
+    evidence_policy = sub.add_parser('refine-evidence-thresholds', help='Remove dominated validation cutoffs and center decision gaps without retraining')
     evidence_policy.add_argument('--corpus', required=True); evidence_policy.add_argument('--checkpoint', required=True)
     evidence_policy.add_argument('--base', required=True); evidence_policy.add_argument('--output-dir', required=True)
     evidence_policy.add_argument('--device', choices=('auto','cpu','cuda'), default='cuda')

@@ -2,7 +2,6 @@
 
 import math
 from hashlib import sha256
-from itertools import groupby
 from .schema import METRICS
 from .labels import evidence_target
 
@@ -31,6 +30,7 @@ def _person_pairs(rows, predictions, key):
 def calibrate_evidence(rows, predictions, *, selection_rows, selection_predictions, target_precision, alpha=.05):
     # PSEUDOCODE: select thresholds on validation -> freeze -> certify once on independent calibration people.
     from scipy.stats import beta
+    from .guard import choose_empirical_threshold
     if (len(rows) != len(predictions) or len(selection_rows) != len(selection_predictions)
             or type(target_precision) not in (int, float) or not 0 < target_precision < 1
             or type(alpha) not in (int, float) or not 0 < alpha < 1):
@@ -48,14 +48,8 @@ def calibrate_evidence(rows, predictions, *, selection_rows, selection_predictio
         positives = sum(known for _, known in pairs)
         candidate = None
         if any(known for _, known in selection) and any(not known for _, known in selection):
-            count, correct = 0, 0
-            for threshold, group in groupby(sorted(selection, reverse=True), key=lambda pair: pair[0]):
-                for _, known in group:
-                    count += 1
-                    correct += known
-                if correct / count >= target_precision:
-                    candidate = threshold
-                # Equal scores enter together; later passing cutoffs retain the greatest coverage.
+            candidate = choose_empirical_threshold([int(known) for _, known in selection],
+                [probability for probability, _ in selection], target_precision)
         item = {'threshold': None, 'n': len(pairs), 'known': positives, 'accepted': 0,
                 'precision': None, 'precision_lower': 0., 'candidate_threshold': candidate,
                 'status': 'insufficient_evidence_calibration'}
@@ -71,6 +65,7 @@ def calibrate_evidence(rows, predictions, *, selection_rows, selection_predictio
             'alpha': alpha, 'per_metric_alpha': per_metric_alpha,
             'minimum_accepted_if_all_correct': math.ceil(math.log(per_metric_alpha) / math.log(target_precision)),
             'thresholds': thresholds, 'sampling': 'one_identity_selected_text_per_person_per_metric',
+            'selection_objective': 'maximum_supported_recall_then_minimum_false_acceptances_at_target_precision',
             'interpretation': 'requires_independent_representative_people_and_frozen_selection_not_a_clinical_guarantee'}
 
 

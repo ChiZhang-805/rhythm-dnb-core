@@ -92,6 +92,29 @@ class TextGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'finite probability'):
             selective_metrics([0, 1], [.3, .7], float('nan'))
 
+    def test_threshold_does_not_spend_precision_on_extra_negative_cases(self):
+        labels, probabilities = [1] * 20 + [0, 0], [.9] * 20 + [.05, .01]
+        threshold = choose_empirical_threshold(labels, probabilities, .95)
+        self.assertEqual(threshold, .9)
+        actual = selective_metrics(labels, probabilities, threshold)
+        self.assertEqual(actual['accepted_supported'], 20)
+        self.assertEqual(actual['false_acceptances'], 0)
+        self.assertEqual(choose_empirical_threshold([1, 0, 1, 0], [.9, .8, .7, .1], .6), .7)
+        from rhythm_dnb.text.evidence import calibrate_evidence
+        def rows_for(prefix, targets):
+            return [{'example_id': f'{prefix}-{i}', 'participant_id': f'{prefix}-{i}',
+                     'scores': {'stress_intensity': 40. if target else None},
+                     'label_states': {'stress_intensity': 'supported' if target else 'insufficient_evidence'}}
+                    for i, target in enumerate(targets)]
+        calibration = calibrate_evidence(rows_for('calibration', [1] * 120 + [0] * 120),
+            [{'evidence': {'stress_intensity': p}} for p in [.9] * 120 + [.04] * 120],
+            selection_rows=rows_for('selection', labels),
+            selection_predictions=[{'evidence': {'stress_intensity': p}} for p in probabilities], target_precision=.95)
+        policy = calibration['thresholds']['stress_intensity']
+        self.assertEqual(policy['candidate_threshold'], .9)
+        self.assertEqual(policy['accepted'], 120)
+        self.assertEqual(policy['status'], 'calibrated')
+
     def test_feature_extraction_and_guard_leave_checkpoint_scores_unchanged(self):
         from core.test_text_experiment import experimental_fixture
         from rhythm_dnb.text.experiment import train_experiment
