@@ -15,6 +15,17 @@ UTC = timezone.utc
 
 
 class MeasurementTests(unittest.TestCase):
+    def test_activity_scale_invariance_and_finite_outputs(self):
+        profile = np.arange(24, dtype=float)
+        days = np.asarray([np.roll(profile, shift) for shift in range(7)])
+        self.assertAlmostEqual(activity_regularity(days), activity_regularity(days * 1e200))
+        self.assertAlmostEqual(intradaily_variability(profile), intradaily_variability(profile * 1e200))
+        np.testing.assert_array_equal(hourly_profile(np.full(24, 1e307), [60.] * 24), np.full(24, 1e307))
+        with self.assertRaisesRegex(ValueError, 'total exceeds'):
+            daily_activity(np.full(24, 1e307))
+        with self.assertRaisesRegex(ValueError, 'exposure exceeds'):
+            hourly_profile(np.full(24, 1.7e308), [45.] * 24)
+
     def test_invalid_regularity_inputs_cannot_become_missing_or_stable(self):
         from rhythm_dnb.measures.scaling import circular_summary
         for period in (0, -1, True, float('nan'), float('inf')):

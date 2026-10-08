@@ -25,7 +25,12 @@ def hourly_profile(hourly, wear_minutes=None, *, minimum_hour_wear=45., minimum_
         wear = np.asarray(wear_minutes, dtype=float)
         if wear.shape != (24,) or not np.isfinite(wear).all() or np.any((wear < 0) | (wear > 60)):
             raise ValueError('Invalid wear grid.')
-        x = np.divide(x * 60, wear, out=np.full(24, np.nan), where=wear >= minimum_hour_wear)
+        # Divide the exposure factor first; x*60 can overflow even when the final rate is representable.
+        with np.errstate(over='raise'):
+            try:
+                x = x * np.divide(60., wear, out=np.full(24, np.nan), where=wear >= minimum_hour_wear)
+            except FloatingPointError as error:
+                raise ValueError('Normalized activity exposure exceeds finite numeric range.') from error
         if wear.sum() < minimum_day_wear:
             x[:] = np.nan
     return x.copy()
@@ -37,6 +42,11 @@ def daily_activity(hourly, wear_minutes=None, *, minimum_hour_wear=45., minimum_
     empty = {k: None for k in ('activity_m10_start_h', 'activity_ra', 'activity_total', 'm10', 'l5')}
     if not np.isfinite(x).all():
         return empty
+    with np.errstate(over='raise'):
+        try:
+            total = float(x.sum())
+        except FloatingPointError as error:
+            raise ValueError('Daily activity total exceeds finite numeric range.') from error
     doubled = np.r_[x, x]
     means10 = np.array([doubled[i:i + 10].mean() for i in range(24)])
     means5 = np.array([doubled[i:i + 5].mean() for i in range(24)])
@@ -44,7 +54,7 @@ def daily_activity(hourly, wear_minutes=None, *, minimum_hour_wear=45., minimum_
     maxima = np.flatnonzero(np.isclose(means10, m10, rtol=1e-12, atol=0))
     return {'activity_m10_start_h': float(maxima[0]) if m10 > l5 and len(maxima) == 1 else None,
             'activity_ra': (m10 - l5) / (m10 + l5) if m10 + l5 > 0 else None,
-            'activity_total': float(x.sum()), 'm10': m10, 'l5': l5}
+            'activity_total': total, 'm10': m10, 'l5': l5}
 
 
 def activity_regularity(days, minimum=6):
@@ -58,6 +68,10 @@ def activity_regularity(days, minimum=6):
     x = x[np.isfinite(x).all(axis=1)]
     if len(x) < minimum:
         return None
+    scale = float(x.max())
+    if not scale:
+        return None
+    x = x / scale  # IS is scale invariant; bound squares before variance calculations.
     denominator = np.sum((x - x.mean()) ** 2)
     if denominator <= 0:
         return None
@@ -73,5 +87,9 @@ def intradaily_variability(hourly):
         raise ValueError('Intradaily variability requires nonnegative activity without infinities.')
     if len(x) < 2 or not np.isfinite(x).all():
         return None
+    scale = float(x.max())
+    if not scale:
+        return None
+    x = x / scale  # IV is scale invariant, including its successive-difference numerator.
     denominator = (len(x) - 1) * np.sum((x - x.mean()) ** 2)
     return float(len(x) * np.sum(np.diff(x) ** 2) / denominator) if denominator > 0 else None
