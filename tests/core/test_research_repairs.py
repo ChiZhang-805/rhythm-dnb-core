@@ -283,6 +283,23 @@ class ResearchRepairsTests(unittest.TestCase):
         self.assertFalse(result['winner_selected_on_test'])
         self.assertEqual(result['methods']['dnb']['test']['event_sensitivity'], 1.)
         self.assertEqual(result['methods']['dnb']['threshold'] * 2, result['methods']['trend']['threshold'])
+        paired = compare_methods(methods, **args, bootstrap_repetitions=40)
+        comparison = paired['paired_differences']['comparisons'][0]
+        self.assertEqual((comparison['left'], comparison['right']), ('dnb', 'trend'))
+        for metric in comparison['metrics'].values():
+            self.assertEqual(metric['estimate'], 0.)
+            self.assertEqual(metric['percentile_95'], [0., 0.])
+        self.assertFalse(paired['paired_differences']['thresholds_refitted'])
+        self.assertLess(comparison['metrics']['event_sensitivity']['valid_replicates'], 40)
+        self.assertEqual(comparison['metrics']['score_coverage']['valid_replicates'], 40)
+        methods['trend']['test'] = [replace(r, score=None) for r in methods['trend']['test']]
+        missing = compare_methods(methods, **args, bootstrap_repetitions=40)
+        difference = missing['paired_differences']['comparisons'][0]['metrics']
+        self.assertEqual(difference['event_sensitivity']['estimate'], 1.)
+        self.assertEqual(difference['event_sensitivity']['percentile_95'], [1., 1.])
+        self.assertEqual(difference['score_coverage']['estimate'], 1.)
+        self.assertIsNone(difference['false_alarms_per_30_days']['estimate'])
+        self.assertEqual(difference['false_alarms_per_30_days']['valid_replicates'], 0)
         methods['trend']['test'][0] = replace(methods['trend']['test'][0], label_available_at=issued + timedelta(days=16))
         with self.assertRaisesRegex(ValueError, 'identical'): compare_methods(methods, **args)
 

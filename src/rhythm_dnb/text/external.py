@@ -42,6 +42,8 @@ def ordinal_emotion_report(rows, predictions):
     if not rows or len(rows) != len(predictions) or len({r['example_id'] for r in rows}) != len(rows):
         raise ValueError('External evaluation requires unique identities and aligned predictions.')
     for row, prediction in zip(rows, predictions):
+        if prediction.get('example_id') != row['example_id']:
+            raise ValueError('External emotion predictions must match each reference identity in order.')
         if row.get('external_scale') != 'ordinal_0_3' or row['category'] != 'emotion' or set(row['external_reference']) != set(MAPPING):
             raise ValueError('External labels must retain the declared ordinal emotion contract.')
         if any(type(v) is not int or v not in (0, 1, 2, 3) for v in row['external_reference'].values()):

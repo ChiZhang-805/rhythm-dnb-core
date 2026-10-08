@@ -4,7 +4,7 @@ from dataclasses import asdict, replace
 from ..contracts import EvaluationDay
 from ..provenance import fingerprint
 from ..timebase import instant
-from .evaluate import event_metrics, cluster_intervals, include_monitoring_days
+from .evaluate import event_metrics, include_monitoring_days
 
 
 def _identity(row):
@@ -65,11 +65,74 @@ def compare_methods(methods, *, calibration_events, test_events, calibration_mon
         evaluation = event_metrics(test_rows, threshold, events=test_events, monitoring=test_monitoring, **policy)
         result[name] = {'threshold': threshold, 'calibration': selected[3] if threshold is not None else reference,
             'status': 'calibrated' if threshold is not None else 'no_useful_calibrated_policy', 'test': evaluation,
-            'intervals': cluster_intervals(test_rows, threshold, repetitions=bootstrap_repetitions, seed=config.seed,
-                events=test_events, monitoring=test_monitoring, **policy) if bootstrap_repetitions else None}
+            'intervals': None}
+    differences = None
+    if bootstrap_repetitions:
+        differences = _paired_intervals(aligned, result, test_events, test_monitoring, policy,
+                                        repetitions=bootstrap_repetitions, seed=config.seed)
     return {'methods': result, 'test_used_for_selection': False, 'winner_selected_on_test': False,
+        'paired_differences': differences,
         'cohort_id': fingerprint(identities_as_lists(identities)), 'false_alarm_budget': config.max_false_alarms_per_30_days,
         'interpretation': 'requires independently produced as-of scores and frozen methods; comparison alone is not clinical validation'}
+
+
+def _paired_intervals(aligned, result, events, monitoring, policy, *, repetitions, seed):
+    # PSEUDOCODE: draw the same whole people for every frozen method -> retain each method and paired difference on that replicate.
+    from collections import defaultdict
+    from itertools import combinations
+    import numpy as np
+    groups = {name: defaultdict(list) for name in aligned}
+    for name, partitions in aligned.items():
+        for row in partitions['test']:
+            groups[name][row.participant_id].append(row)
+    periods, event_groups = defaultdict(list), defaultdict(list)
+    for period in monitoring:
+        periods[period.participant_id].append(period)
+    for event in events:
+        event_groups[event.participant_id].append(event)
+    ids = sorted(periods)
+    if len(ids) < 2:
+        raise ValueError('Paired cluster intervals need at least two independent test people.')
+    keys = ('event_sensitivity', 'false_alarms_per_30_days', 'alarm_ppv', 'median_lead_days')
+    samples = {name: {key: [] for key in keys} for name in aligned}
+    pairs = {pair: {key: [] for key in (*keys, 'score_coverage')} for pair in combinations(sorted(aligned), 2)}
+    rng = np.random.default_rng(seed)
+    for _ in range(repetitions):
+        chosen = rng.choice(ids, len(ids), replace=True)
+        selected_events = [replace(event, participant_id=f'bootstrap_{i}') for i, person in enumerate(chosen)
+                           for event in event_groups[person]]
+        selected_periods = [replace(period, participant_id=f'bootstrap_{i}') for i, person in enumerate(chosen)
+                            for period in periods[person]]
+        metrics = {}
+        for name, people in groups.items():
+            selected = [replace(row, participant_id=f'bootstrap_{i}') for i, person in enumerate(chosen)
+                        for row in people[person]]
+            metrics[name] = event_metrics(selected, result[name]['threshold'], events=selected_events,
+                monitoring=selected_periods, **policy)
+            for key in keys:
+                if metrics[name][key] is not None:
+                    samples[name][key].append(metrics[name][key])
+        for (left, right), measures in pairs.items():
+            for key, values in measures.items():
+                if metrics[left][key] is not None and metrics[right][key] is not None:
+                    values.append(metrics[left][key] - metrics[right][key])
+    def interval(values):
+        # PSEUDOCODE: expose undefined replicates rather than replacing missing outcomes by zero.
+        return {'percentile_95': np.quantile(values, [.025, .975]).tolist() if values else None,
+                'valid_replicates': len(values), 'requested_replicates': repetitions}
+    for name, measures in samples.items():
+        result[name]['intervals'] = {key: interval(values) for key, values in measures.items()}
+    output = []
+    for (left, right), measures in pairs.items():
+        point = {key: result[left]['test'][key] - result[right]['test'][key]
+                 if result[left]['test'][key] is not None and result[right]['test'][key] is not None else None
+                 for key in measures}
+        output.append({'left': left, 'right': right, 'direction': 'left_minus_right',
+            'metrics': {key: {'estimate': point[key], **interval(values)} for key, values in measures.items()}})
+    return {'comparisons': output, 'sampling': 'same_whole_people_in_each_method_per_replicate',
+        'thresholds_refitted': False, 'confidence_intervals': 'pointwise_percentile_95_not_multiplicity_adjusted',
+        'winner_selected': False,
+        'interpretation': 'paired descriptive uncertainty; lead-time comparisons may involve different detected events'}
 
 
 def identities_as_lists(identities):
