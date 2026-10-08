@@ -72,7 +72,7 @@ class TextExperimentTests(unittest.TestCase):
             self.assertFalse(evaluated['test']['independent_human_gold'])
             with self.assertRaises(ValueError):
                 TextPredictor(evaluated['best_checkpoint'], base_path=base)
-            predictor = TextPredictor(evaluated['best_checkpoint'], base_path=base, allow_experimental=True)
+            predictor = TextPredictor(evaluated['best_checkpoint'], base_path=base, device='cpu', allow_experimental=True)
             prediction = predictor.predict('压力', '今天压力很大')
             self.assertEqual(set(prediction['scores']), {'stress_intensity'})
             self.assertTrue(0 <= prediction['estimates']['stress_intensity'] <= 100)
@@ -80,5 +80,15 @@ class TextExperimentTests(unittest.TestCase):
             self.assertFalse(prediction['evidence_calibrated'])
             self.assertFalse(prediction['eligible_for_primary_dnb'])
             self.assertNotIn('evidence', prediction)
+            import torch
+            explicit = TextPredictor(evaluated['best_checkpoint'], base_path=base, device='cpu', allow_experimental=True, precision='fp32')
+            with torch.autocast('cpu', dtype=torch.bfloat16):
+                fixed = explicit.predict('压力', '今天压力很大')
+            self.assertEqual(fixed['estimates'], prediction['estimates'])
+            self.assertEqual(fixed['inference_profile']['id'], prediction['inference_profile']['id'])
+            self.assertEqual(fixed['inference_profile']['compute_dtype'], 'float32')
+            self.assertEqual(fixed['model_identity'], prediction['model_identity'])
+            fixed['inference_profile']['compute_dtype'] = 'tampered'
+            self.assertEqual(explicit.predict('压力', '今天压力很大')['inference_profile']['compute_dtype'], 'float32')
             points = json.loads((Path(folder) / 'evaluation/test-predictions.json').read_text(encoding='utf-8'))
             self.assertNotIn('evidence', points['rows'][0])

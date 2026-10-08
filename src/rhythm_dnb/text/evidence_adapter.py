@@ -326,24 +326,31 @@ class EvidenceAdapter:
     def predict(self, category, text):
         # PSEUDOCODE: compute evidence only with the separate adapter; never use its altered encoder to score intensity.
         import torch
-        from .checkpoint import load_checkpoint
+        from .checkpoint import load_checkpoint, device_for
+        from .inference import resolve_precision, inference_profile
         from .dataset import encode
         if self.model is None:
-            self.model, self.tokenizer, _, identity = load_checkpoint(self.checkpoint, base_path=self.base,
-                device=self.device, allow_evidence=True)
+            target = device_for(self.device) if isinstance(self.device, str) else self.device
+            dtype = resolve_precision('auto', target, self.manifest['storage'])
+            with torch.autocast(target.type, enabled=False):
+                self.model, self.tokenizer, _, identity = load_checkpoint(self.checkpoint, base_path=self.base,
+                    device=target, dtype=dtype, allow_evidence=True)
             if identity != self.identity:
                 self.model = None
                 raise ValueError('Evidence checkpoint changed after initialization.')
             self.model.eval()
+            self.inference_dtype = dtype
         target = next(self.model.evidence_heads.parameters()).device
         encoded = encode(self.tokenizer, category, text, self.manifest['config']['max_length'])
-        with torch.inference_mode():
+        profile = inference_profile(self.identity, self.manifest, self.model, target, self.inference_dtype)
+        with torch.inference_mode(), torch.autocast(target.type, enabled=False):
             outputs = self.model(**{k: torch.tensor([v], device=target) for k, v in encoded.items()})
             probabilities = torch.sigmoid(outputs['_evidence'][category][0].float()).cpu().tolist()
         values = dict(zip(CATEGORIES[category][1], probabilities))
         if any(not math.isfinite(v) for v in values.values()):
             raise ValueError('Evidence adapter returned nonfinite probabilities.')
         return {'evidence_estimates': values, 'evidence_adapter_identity': self.identity,
+                'evidence_inference_profile': profile,
                 'evidence_guard_kind': 'experimental_context_adapter', 'acceptance_certified': False,
                 'experimental_acceptance': {k: self.manifest['thresholds'][k] is not None and v >= self.manifest['thresholds'][k]
                                             for k, v in values.items()}}

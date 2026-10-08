@@ -84,3 +84,4 @@ guard_inverse_regularization,caller supplied,text/guard.py,独立依据头的逆
 guard_target_precision,caller supplied,text/guard.py,实验接收目标,本次明确给定0.95以检查可靠性与覆盖率的权衡,只能作为经验验证目标；正式接收仍需独立人群校准,design_choice,https://proceedings.mlr.press/v97/geifman19a.html；本实现不是该论文复现
 guard_solver_tolerance,1e-7,text/guard.py,线性优化收敛阈值,数值求解精度保护不是预测性能参数,收敛警告直接失败；修改须检查预测及损失稳定性,numerical_safeguard,https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
 guard_solver_max_iterations,2000,text/guard.py,线性优化计算上限,给高维冻结表征拟合预留迭代；达到上限仍未收敛即失败,按收敛状态调整而非以测试成绩选择,hardware,https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
+inference_precision,auto,text/inference.py,实验程度推理计算方式,保持原默认；允许显式固定fp32或bf16或fp16并记录实际环境,只改实验程度模型；单独依据附件保持原设置；比较数值稳定性和完整语义误差后再固定,measurement_contract,https://docs.pytorch.org/docs/stable/notes/numerical_accuracy.html；本地runs/batch-stability同输入配对检查

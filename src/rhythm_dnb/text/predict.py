@@ -9,10 +9,17 @@ from .evidence import qualified_scores
 
 
 class TextPredictor:
-    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False, guard_dir=None, evidence_checkpoint=None):
+    def __init__(self, checkpoint, *, device='auto', base_path=None, allow_experimental=False, guard_dir=None, evidence_checkpoint=None, precision='auto'):
         # PSEUDOCODE: inspect a caller-selected local checkpoint; defer accelerator allocation until inference.
         self.checkpoint = checkpoint
         self.manifest, self.model_identity = inspect_checkpoint(checkpoint, allow_experimental=allow_experimental)
+        if precision not in ('auto', 'fp32', 'bf16', 'fp16'):
+            raise ValueError('Unknown inference precision.')
+        if precision != 'auto' and (not allow_experimental or self.manifest['purpose'] != 'experimental_semantic_regression'):
+            raise ValueError('Changing inference precision requires an explicitly experimental degree model; formal calibration is unchanged.')
+        if precision != 'auto' and guard_dir is not None:
+            raise ValueError('The frozen-feature guard has not been validated with changed inference precision.')
+        self.precision = precision
         self.allow_experimental = allow_experimental
         self.device_name = device
         self.base_path = base_path
@@ -36,18 +43,23 @@ class TextPredictor:
     def predict(self, category, text):
         # PSEUDOCODE: validate category/text -> encode without truncation -> return unrounded bounded intensities.
         import torch
+        from .inference import resolve_precision, inference_profile
         category, text = validate_input(category, text)
         with self._lock:
             if not self._loaded:
                 self.device = device_for(self.device_name)
-                model, tokenizer, manifest, identity = load_checkpoint(self.checkpoint, base_path=self.base_path, device=self.device,
-                                                                       allow_experimental=self.allow_experimental)
+                dtype = resolve_precision(self.precision, self.device, self.manifest['storage'])
+                with torch.autocast(self.device.type, enabled=False):
+                    model, tokenizer, manifest, identity = load_checkpoint(self.checkpoint, base_path=self.base_path, device=self.device,
+                                                                           dtype=dtype, allow_experimental=self.allow_experimental)
                 if identity != self.model_identity:
                     raise ValueError('Checkpoint changed after predictor initialization.')
                 self.model, self.tokenizer = model.eval(), tokenizer
+                self.inference_dtype = dtype
                 self._loaded = True
             encoded = encode(self.tokenizer, category, text, self.manifest['config']['max_length'])
-            with torch.inference_mode():
+            profile = inference_profile(self.model_identity, self.manifest, self.model, self.device, self.inference_dtype)
+            with torch.inference_mode(), torch.autocast(self.device.type, enabled=False):
                 outputs = self.model(**{k: torch.tensor([v], device=self.device) for k, v in encoded.items()},
                                      return_representation=self.guard is not None)
                 values = (outputs[category][0].float().cpu() * 100).tolist()
@@ -69,6 +81,7 @@ class TextPredictor:
                 return {**diagnostic, 'category': category, 'scores': {k: None for k in estimates}, 'normalized': {k: None for k in estimates},
                         'estimates': estimates, 'reasons': {k: 'uncalibrated_experimental_text_evidence' for k in estimates},
                         'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),
+                        'inference_profile': profile,
                         'score_kind': 'experimental_semantic_reference_estimate', 'evidence_calibrated': False,
                         'evidence_trained': self.guard is not None or self.evidence_adapter is not None or self.manifest.get('evidence_trained', False),
                         'independent_human_gold': False, 'eligible_for_primary_dnb': False}
@@ -76,4 +89,5 @@ class TextPredictor:
             return {'category': category, 'scores': scores, 'normalized': {k: v / 100 if v is not None else None for k, v in scores.items()},
                     'estimates': estimates, 'evidence': evidence, 'reasons': reasons,
                     'model_identity': self.model_identity, 'run_id': self.manifest.get('run_id'),
+                    'inference_profile': profile,
                     'score_kind': 'text_semantic_estimate_not_probability'}

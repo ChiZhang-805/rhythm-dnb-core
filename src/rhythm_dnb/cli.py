@@ -124,6 +124,8 @@ def main(argv=None):
     score_experiment.add_argument('--category', required=True); score_experiment.add_argument('--text', required=True)
     score_experiment.add_argument('--output', required=True)
     score_experiment.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default='auto')
+    score_experiment.add_argument('--precision', choices=('auto', 'fp32', 'bf16', 'fp16'), default='auto',
+        help='Experimental degree inference only; the separate evidence adapter retains its existing arithmetic')
     score_experiment.add_argument('--guard', help='Optional separate experimental evidence guard bound to this checkpoint')
     score_experiment.add_argument('--evidence-checkpoint', help='Optional context evidence adapter bound to this scoring checkpoint')
     features = sub.add_parser('extract-text-features', help='Cache frozen representations without modifying intensity weights')
@@ -323,7 +325,7 @@ def main(argv=None):
     elif args.command == 'score-text-experiment':
         from .text.predict import TextPredictor
         result = TextPredictor(args.checkpoint, device=args.device, base_path=args.base, allow_experimental=True,
-            guard_dir=args.guard, evidence_checkpoint=args.evidence_checkpoint).predict(args.category, args.text)
+            guard_dir=args.guard, evidence_checkpoint=args.evidence_checkpoint, precision=args.precision).predict(args.category, args.text)
     elif args.command == 'extract-text-features':
         from .text.features import extract_features
         print(canonical_json(extract_features(_read(args.corpus)['rows'], args.checkpoint, args.base, args.output_dir,
