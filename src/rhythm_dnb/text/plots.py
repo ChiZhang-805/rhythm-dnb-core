@@ -2,19 +2,19 @@
 
 from pathlib import Path
 import numpy as np
-from ..research.plots import _save
+from ..research.plots import _save, _subplots
 
 
 def plot_evaluation(result, predictions, directory):
     # PSEUDOCODE: use saved held-out results only -> plot error/coverage/variation -> inspect residuals and paired scores.
-    import matplotlib.pyplot as plt
+    from matplotlib import colormaps
     report = result['test']
     keys = list(report['per_metric'])
     if not keys or predictions['identity'] != result['identity']:
         raise ValueError('Plots require matching held-out results and checkpoint identity.')
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=False)
     labels = [key.replace('_', ' ') for key in keys]
-    figure, axes = plt.subplots(1, 3, figsize=(17, max(6, len(keys) * .4)), layout='constrained', sharey=True)
+    figure, axes = _subplots(1, 3, figsize=(17, max(6, len(keys) * .4)), layout='constrained', sharey=True)
     experimental = result.get('purpose') == 'experimental_semantic_regression'
     middle = ('baseline_mae', 'Training-mean baseline error') if experimental else ('coverage', 'Evidence acceptance fraction')
     for axis, field, title in zip(axes, ('mae', middle[0], 'sd_ratio'), ('Absolute error (0–100 scale)', middle[1], 'Prediction SD / reference SD')):
@@ -34,8 +34,8 @@ def plot_evaluation(result, predictions, directory):
         if pair['left'] in keys and pair['right'] in keys and pair['correlation'] is not None:
             i, j = keys.index(pair['left']), keys.index(pair['right'])
             matrix[i, j] = matrix[j, i] = pair['correlation']
-    figure, axis = plt.subplots(figsize=(12, 10), layout='constrained')
-    color = plt.get_cmap('coolwarm').with_extremes(bad='#dddddd')
+    figure, axis = _subplots(figsize=(12, 10), layout='constrained')
+    color = colormaps['coolwarm'].with_extremes(bad='#dddddd')
     image = axis.imshow(matrix, cmap=color, vmin=-1, vmax=1)
     axis.set_xticks(range(len(keys)), labels, rotation=75, ha='right', fontsize=8)
     axis.set_yticks(range(len(keys)), labels, fontsize=8)
@@ -43,7 +43,7 @@ def plot_evaluation(result, predictions, directory):
     figure.colorbar(image, ax=axis, label='Residual Pearson correlation')
     outputs.append(_save(figure, directory / 'residual-correlations'))
     for page in range(0, len(keys), 6):
-        figure, axes = plt.subplots(2, 3, figsize=(13, 8), layout='constrained')
+        figure, axes = _subplots(2, 3, figsize=(13, 8), layout='constrained')
         for axis, key in zip(axes.flat, keys[page:page + 6]):
             pairs = [(r['truth'][key], r['scores'][key]) for r in predictions['rows'] if r['truth'].get(key) is not None]
             if pairs:

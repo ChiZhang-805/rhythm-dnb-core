@@ -29,6 +29,8 @@ python -m rhythm_dnb --help
 
 入口是 `src/rhythm_dnb/workflows/`；数学计算在 `dnb/`，量化在 `measures/` 和 `text/`，输入输出在 `io/`。配置集中在 `configs/`。
 
+现有自建数据的全流程实验用 `tools/run_research.py`：本地准备与检查 → GPU 训练和文本打分 → DNB/简单方法对照 → 最终预警正确率、漏报、误报及置信区间。命令见 [服务器训练](docs/training.md)。这条实验路径单独标明模拟数据；不能替代正式人群验证。
+
 本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
 
 ## 使用说明

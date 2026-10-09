@@ -95,6 +95,30 @@ def discover(pairs, config, reference, cutoff, *, minimum_people=9):
     if stable.shape != transition.shape or not np.isfinite(stable).all() or not np.isfinite(transition).all():
         raise ValueError('Development pairs must have a complete fixed feature universe.')
     names = reference['features']
+    scan = discover_matrices(stable, transition, names, config)
+    records, chosen = scan['candidates'], scan['chosen']
+    payload = {'study_id': fingerprint(asdict(config)), 'reference_id': reference['id'], 'people': ids,
+               'outcome_protocol_id': pairs[0].outcome_protocol_id,
+               'cutoff': instant(cutoff).isoformat(), 'modules': [r['module'] for r in chosen],
+               'status': 'frozen' if chosen else 'no_stable_modules', 'candidates': records,
+               'bootstrap_repetitions': config.bootstrap_repetitions, 'seed': config.seed,
+               'permutation_repetitions': config.permutation_repetitions,
+               'permutation_p_resolution': 1 / (config.permutation_repetitions + 1),
+               'discovery_alpha': config.discovery_alpha,
+               'null_assumption': 'paired_condition_exchangeability; global-null familywise control',
+               'selection': 'three_DNB_conditions_plus_person_bootstrap_plus_max_stat_permutation'}
+    return {**payload, 'id': fingerprint(payload)}
+
+
+def discover_matrices(stable, transition, names, config):
+    """Pure paired-person statistics; callers must validate origin, timing and isolation."""
+    # PSEUDOCODE: check complete independent-pair matrices -> reuse the formal discovery statistics.
+    stable, transition = np.asarray(stable, dtype=float), np.asarray(transition, dtype=float)
+    names = list(names)
+    if (stable.ndim != 2 or stable.shape != transition.shape or stable.shape[1] != len(names)
+            or len(stable) < 9 or len(set(names)) != len(names)
+            or not np.isfinite(stable).all() or not np.isfinite(transition).all()):
+        raise ValueError("Discovery requires at least nine complete paired people.")
     candidates = candidate_modules(names, method='bounded_exhaustive', sizes=config.module_sizes)
     modules = list(candidates.values())
     indices = []
@@ -112,7 +136,7 @@ def discover(pairs, config, reference, cutoff, *, minimum_people=9):
     valid = np.zeros(len(modules), dtype=int)
     rng = np.random.default_rng(config.seed)
     for _ in range(config.bootstrap_repetitions):
-        selected = rng.integers(0, len(ids), len(ids))
+        selected = rng.integers(0, len(stable), len(stable))
         a, b = _components(stable[selected], weights), _components(transition[selected], weights)
         ok = np.isfinite(a).all(axis=1) & np.isfinite(b).all(axis=1) & (a[:, 2] > config.epsilon) & (b[:, 2] > config.epsilon)
         direction = (b[:, 0] > a[:, 0]) & (b[:, 1] > a[:, 1]) & (b[:, 2] < a[:, 2])
@@ -126,7 +150,7 @@ def discover(pairs, config, reference, cutoff, *, minimum_people=9):
     null_max = np.empty(config.permutation_repetitions)
     permutation_rng = np.random.default_rng(np.random.SeedSequence([config.seed, 1]))
     for j in range(config.permutation_repetitions):
-        swap = permutation_rng.integers(0, 2, size=(len(ids), 1)).astype(bool)
+        swap = permutation_rng.integers(0, 2, size=(len(stable), 1)).astype(bool)
         a = _components(np.where(swap, transition, stable), weights)
         b = _components(np.where(swap, stable, transition), weights)
         null_max[j] = np.max(_directional_statistic(a, b, config.epsilon)) if np.isfinite(a).all() and np.isfinite(b).all() else np.inf
@@ -145,14 +169,4 @@ def discover(pairs, config, reference, cutoff, *, minimum_people=9):
                         'pre_event_components': pre[i].tolist()})
     chosen = sorted((r for r in records if r['eligible']),
                     key=lambda r: (-r['stability'], -(r['score_ratio'] or 0), tuple(r['module'])))[:config.max_modules]
-    payload = {'study_id': fingerprint(asdict(config)), 'reference_id': reference['id'], 'people': ids,
-               'outcome_protocol_id': pairs[0].outcome_protocol_id,
-               'cutoff': instant(cutoff).isoformat(), 'modules': [r['module'] for r in chosen],
-               'status': 'frozen' if chosen else 'no_stable_modules', 'candidates': records,
-               'bootstrap_repetitions': config.bootstrap_repetitions, 'seed': config.seed,
-               'permutation_repetitions': config.permutation_repetitions,
-               'permutation_p_resolution': 1 / (config.permutation_repetitions + 1),
-               'discovery_alpha': config.discovery_alpha,
-               'null_assumption': 'paired_condition_exchangeability; global-null familywise control',
-               'selection': 'three_DNB_conditions_plus_person_bootstrap_plus_max_stat_permutation'}
-    return {**payload, 'id': fingerprint(payload)}
+    return {'candidates': records, 'chosen': chosen}

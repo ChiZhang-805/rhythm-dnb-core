@@ -3,11 +3,21 @@
 from pathlib import Path
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from rhythm_dnb.research.plots import plot_network_diagnostics, plot_pair_scatter
+from rhythm_dnb.research.plots import plot_network_diagnostics, plot_pair_scatter, _subplots
 
 
 class PlotTests(unittest.TestCase):
+    def test_background_export_does_not_require_pyplot_or_a_gui(self):
+        figure, _ = _subplots()
+        self.assertIsNone(figure.canvas.manager)
+        with tempfile.TemporaryDirectory() as folder:
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                result = worker.submit(plot_pair_scatter, [[1., 2.], [2., 4.]], ('a', 'b'), [('a', 'b')],
+                                       Path(folder) / 'background', provenance_label='Artificial software test').result()
+            self.assertTrue(Path(result['figure']).is_file())
+
     def test_sparse_network_is_reported_invalid_without_a_false_score(self):
         with tempfile.TemporaryDirectory() as folder:
             result = plot_network_diagnostics({'unit-test-only': [[1., 2., 3.]]}, ('a', 'b', 'c'),

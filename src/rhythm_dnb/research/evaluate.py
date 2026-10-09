@@ -119,6 +119,22 @@ def event_metrics(rows, threshold, *, consecutive=2, cooldown_days=7, events=Non
         result['average_precision'] = float(average_precision_score([r.label for r in eligible], [r.score for r in eligible]))
     else:
         result.update(roc_auc=None, average_precision=None)
+    # A risk classification is different from a notification suppressed by cooldown.
+    classified = [(r.label, int(r.score > threshold)) for r in eligible] if threshold is not None else []
+    tn = sum(y == 0 and p == 0 for y, p in classified)
+    fp = sum(y == 0 and p == 1 for y, p in classified)
+    fn = sum(y == 1 and p == 0 for y, p in classified)
+    tp = sum(y == 1 and p == 1 for y, p in classified)
+    sensitivity = tp / (tp + fn) if tp + fn else None
+    specificity = tn / (tn + fp) if tn + fp else None
+    result.update(risk_confusion={'tn': tn, 'fp': fp, 'fn': fn, 'tp': tp},
+                  risk_accuracy=(tn + tp) / len(classified) if classified else None,
+                  risk_balanced_accuracy=(sensitivity + specificity) / 2
+                  if sensitivity is not None and specificity is not None else None,
+                  risk_sensitivity=sensitivity, risk_specificity=specificity,
+                  classified_days=len(classified),
+                  classification_coverage=len(classified) / len(sequence) if sequence else 0.,
+                  classification_definition='score > frozen threshold; before notification persistence/cooldown')
     return result
 
 
@@ -139,7 +155,8 @@ def cluster_intervals(rows, threshold, *, repetitions=10000, seed=20261001, even
     if len(ids) < 2 or type(repetitions) is not int or repetitions < 2:
         raise ValueError('Cluster intervals need at least two people and two replicates.')
     rng = np.random.default_rng(seed)
-    keys = ('event_sensitivity', 'false_alarms_per_30_days', 'alarm_ppv', 'median_lead_days')
+    keys = ('event_sensitivity', 'false_alarms_per_30_days', 'alarm_ppv', 'median_lead_days',
+            'risk_accuracy', 'risk_balanced_accuracy', 'risk_sensitivity', 'risk_specificity')
     samples = {key: [] for key in keys}
     for _ in range(repetitions):
         chosen = rng.choice(ids, len(ids), replace=True)

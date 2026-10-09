@@ -4,9 +4,42 @@ from pathlib import Path
 import numpy as np
 
 
+def _subplots(*args, figsize=None, layout=None, **kwargs):
+    # PSEUDOCODE: create an export-only figure without a desktop GUI manager or Tk event loop.
+    from matplotlib.figure import Figure
+    figure = Figure(figsize=figsize, layout=layout)
+    return figure, figure.subplots(*args, **kwargs)
+
+
+def plot_experiment_result(result, path):
+    # PSEUDOCODE: show held-out accuracy with person intervals and coverage; unavailable DNB accuracy stays blank.
+    methods = list(result['methods'])
+    figure, axes = _subplots(1, 2, figsize=(12, 4), layout='constrained')
+    labels = [name.replace('_', ' ') for name in methods]
+    for i, name in enumerate(methods):
+        record = result['methods'][name]
+        value = record['test']['risk_balanced_accuracy']
+        interval = record['intervals']['risk_balanced_accuracy']['percentile_95']
+        if value is None:
+            axes[0].text(i, .12, 'Unavailable\n(no qualified policy)', ha='center', fontsize=9)
+        else:
+            axes[0].bar(i, value, color='#376f88')
+            if interval:
+                axes[0].plot([i, i], interval, color='black', linewidth=2)
+            axes[0].text(i, min(.96, value + .035), f'{value:.1%}', ha='center')
+        axes[1].bar(i, record['test']['classification_coverage'], color='#64836f')
+    for axis in axes:
+        axis.set_xticks(range(len(methods)), labels, rotation=12, ha='right')
+        axis.set_ylim(0, 1.03)
+        axis.grid(axis='y', alpha=.15)
+    axes[0].set_title('Risk balanced accuracy (95% person bootstrap)')
+    axes[1].set_title('Classification coverage')
+    figure.suptitle('Existing authored simulation: not clinical validation')
+    return _save(figure, path)
+
+
 def _save(figure, path):
     # PSEUDOCODE: create new PNG and SVG artifacts with matching stems; preserve prior evidence.
-    import matplotlib.pyplot as plt
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     try:
         for suffix in ('.png', '.svg'):
@@ -14,18 +47,17 @@ def _save(figure, path):
             with output.open('xb') as stream:
                 figure.savefig(stream, format=suffix[1:], dpi=150, bbox_inches='tight')
     finally:
-        plt.close(figure)
+        figure.clear()
     return str(path.with_suffix('.png'))
 
 
 def plot_source_coverage(audit, path):
     # PSEUDOCODE: divide traceable numeric cells by source rows -> show missing evidence explicitly.
-    import matplotlib.pyplot as plt
     sources, fields = sorted(audit['sources']), audit['numeric_fields']
     if not sources or not fields:
         raise ValueError('Source coverage needs at least one source and one numeric field.')
     matrix = np.array([[audit['traceable_by_source'].get(s, {}).get(k, 0) / audit['sources'][s] for k in fields] for s in sources])
-    figure, axis = plt.subplots(figsize=(19, 6), layout='constrained')
+    figure, axis = _subplots(figsize=(19, 6), layout='constrained')
     image = axis.imshow(matrix, vmin=0, vmax=1, cmap='Blues', aspect='auto')
     axis.set_xticks(range(len(fields)), fields, rotation=70, ha='right', fontsize=7)
     axis.set_yticks(range(len(sources)), [f'{s} (n={audit["sources"][s]})' for s in sources], fontsize=8)
@@ -36,14 +68,13 @@ def plot_source_coverage(audit, path):
 
 def plot_metric_distributions(audit, directory):
     # PSEUDOCODE: paginate every numeric field -> retain source separation -> annotate unobserved fields.
-    import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
     fields, outputs = audit['numeric_fields'], []
     pdf_path = directory / 'all_metric_distributions.pdf'
     with pdf_path.open('xb') as stream, PdfPages(stream) as pdf:
         for page in range(0, len(fields), 12):
-            figure, axes = plt.subplots(4, 3, figsize=(15, 13), layout='constrained')
+            figure, axes = _subplots(4, 3, figsize=(15, 13), layout='constrained')
             for axis, key in zip(axes.flat, fields[page:page + 12]):
                 groups = audit['traceable_distributions'].get(key, {})
                 for source, values in sorted(groups.items()):
@@ -66,11 +97,10 @@ def plot_metric_distributions(audit, directory):
 
 def plot_network_diagnostics(matrices, feature_names, module, path, *, provenance_label):
     # PSEUDOCODE: display signed Pearson matrices and independently computed DNB components.
-    import matplotlib.pyplot as plt
     from ..dnb.classic import dnb_components
     if not matrices:
         raise ValueError('At least one observed matrix is required.')
-    figure, axes = plt.subplots(2, len(matrices), figsize=(5 * len(matrices), 8), layout='constrained', squeeze=False)
+    figure, axes = _subplots(2, len(matrices), figsize=(5 * len(matrices), 8), layout='constrained', squeeze=False)
     evidence = {}
     for j, (name, values) in enumerate(matrices.items()):
         x = np.asarray(values, dtype=float)
@@ -100,7 +130,6 @@ def plot_network_diagnostics(matrices, feature_names, module, path, *, provenanc
 
 def plot_pair_scatter(values, feature_names, pairs, path, *, provenance_label):
     # PSEUDOCODE: select named pairs -> retain finite paired observations -> show direction and actual counts.
-    import matplotlib.pyplot as plt
     from ..dnb.statistics import _numeric
     names = tuple(feature_names)
     x = _numeric(values, 2, 'scatter matrix')
@@ -108,7 +137,7 @@ def plot_pair_scatter(values, feature_names, pairs, path, *, provenance_label):
         raise ValueError('Scatter plots need unique feature names and at least one pair.')
     if any(len(pair) != 2 or pair[0] == pair[1] or not set(pair) <= set(names) for pair in pairs):
         raise ValueError('Unknown or repeated scatter feature.')
-    figure, axes = plt.subplots(1, len(pairs), figsize=(5 * len(pairs), 4), layout='constrained', squeeze=False)
+    figure, axes = _subplots(1, len(pairs), figsize=(5 * len(pairs), 4), layout='constrained', squeeze=False)
     evidence = []
     for axis, (first, second) in zip(axes.flat, pairs):
         pair = x[:, [names.index(first), names.index(second)]]

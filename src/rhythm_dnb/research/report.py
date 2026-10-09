@@ -7,6 +7,7 @@ import sqlite3
 from ..provenance import canonical_json, fingerprint
 from ..measures.panel import JOINT12, OBJECTIVE8
 from ..io.sources.lineage import legacy_field_kind
+from ..io.sources.legacy_schema import FEATURE_KEYS, _feature_value
 
 
 def audit_legacy_store(path):
@@ -17,9 +18,14 @@ def audit_legacy_store(path):
         db.execute('BEGIN')
         source = Counter(); origins = Counter(); supported = Counter(); methods = Counter()
         numeric_fields = {r[1] for r in db.execute('PRAGMA table_info(observations)') if r[2] == 'REAL'}
+        panel_coverage = {name: {'present_columns': sorted(set(fields) & numeric_fields),
+            'missing_columns': sorted(set(fields) - numeric_fields),
+            'status': 'stored_columns_available' if set(fields) <= numeric_fields else 'requires_source_derivation'}
+            for name, fields in (('objective8', OBJECTIVE8), ('joint12', JOINT12))}
         by_source = {}; source_traces = {}; distributions = {}
         people = set(); complete12 = complete8 = onset_count = negative_followup = 0
-        digests = []
+        digests, invalid_values = [], []
+        missing_values = Counter()
         query = '''SELECT o.*, p.payload AS provenance_payload FROM observations o
                    LEFT JOIN observation_provenance p ON p.record_id=o.record_id ORDER BY o.record_id'''
         for row in db.execute(query):
@@ -44,6 +50,13 @@ def audit_legacy_store(path):
             for key in numeric_fields:
                 if row[key] is not None:
                     by_source[source_name][key] += 1
+                else:
+                    missing_values[key] += 1
+                if key in FEATURE_KEYS:
+                    try:
+                        _feature_value(row[key], key)
+                    except ValueError as error:
+                        invalid_values.append({'record_id': row['record_id'], 'field': key, 'error': str(error)})
             complete12 += all(eligible.get(k, False) for k in JOINT12)
             complete8 += all(eligible.get(k, False) for k in OBJECTIVE8)
             onset_count += bool(row['event_onset_at'])
@@ -52,16 +65,18 @@ def audit_legacy_store(path):
         result = {'rows': sum(source.values()), 'participants': len(people), 'sources': dict(source),
                   'cell_evidence': dict(origins), 'methods': dict(methods), 'source_traceable_fields': dict(supported),
                   'numeric_fields': sorted(numeric_fields),
+                  'invalid_numeric_values': invalid_values, 'missing_numeric_values': dict(missing_values),
                   'present_by_source': {s: dict(v) for s, v in by_source.items()},
                   'traceable_by_source': {s: dict(v) for s, v in source_traces.items()},
                   'traceable_distributions': distributions,
                   'traceability_level': 'stored file/key evidence only; original bytes not reverified by this audit',
-                  'complete_source_traceable_joint12_rows': complete12,
-                  'complete_source_traceable_objective8_rows': complete8,
+                  'stored_panel_coverage': panel_coverage,
+                  'complete_source_traceable_joint12_rows': complete12 if not panel_coverage['joint12']['missing_columns'] else None,
+                  'complete_source_traceable_objective8_rows': complete8 if not panel_coverage['objective8']['missing_columns'] else None,
                   'rows_with_onset_field': onset_count, 'negative_rows_with_followup_field': negative_followup,
                   'snapshot_content_id': fingerprint(digests), 'database_modified': False,
                   'prospective_validation_ready': False,
-                  'qualification': 'Numeric cells only; metadata excluded. Missing required columns are not proof that raw sources cannot yield them. Legacy date buckets lack verified arrival times and endpoint confirmation; retrospective traceability is not prospective eligibility.'}
+                  'qualification': 'Numeric cells only; metadata excluded. Panel row counts are null when required stored columns are absent: raw sources must first be transformed and validated. Matching column names alone do not establish compatible units or measurement definitions. Legacy date buckets lack verified arrival times and endpoint confirmation; retrospective traceability is not prospective eligibility.'}
         return result
     finally:
         db.close()

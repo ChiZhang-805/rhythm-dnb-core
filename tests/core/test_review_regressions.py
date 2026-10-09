@@ -1,11 +1,14 @@
 """Scientific failures reproduced during the 2026-10-01 full repository review."""
 
 from dataclasses import replace
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import tempfile
 import unittest
+import json
+import sqlite3
 import numpy as np
 from rhythm_dnb.config import StudyConfig
 from rhythm_dnb.contracts import Observation, Provenance, OutcomeAssessment, OutcomeEvent, EvaluationDay, AlarmState
@@ -27,6 +30,44 @@ UTC = timezone.utc
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_legacy_audit_distinguishes_unbuilt_panels_from_incomplete_rows(self):
+        from rhythm_dnb.research.report import audit_legacy_store
+        from rhythm_dnb.measures.panel import JOINT12
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'legacy.sqlite'
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute('CREATE TABLE observations (record_id TEXT, participant_id TEXT, source_dataset TEXT, '
+                    'event_onset_at TEXT, followup_end_at TEXT, rhythm_state_gt INTEGER, row_sha256 TEXT, '
+                    'sleep_start_hour REAL, sleep_end_hour REAL, sleep_duration_h REAL, resting_hr_bpm REAL)')
+                db.execute('CREATE TABLE observation_provenance (record_id TEXT, payload TEXT)')
+                db.execute("INSERT INTO observations VALUES ('r', 'p', 'test-only', NULL, NULL, NULL, 'hash', 23, 7, 8, 60)")
+                fields = ('sleep_start_hour', 'sleep_end_hour', 'sleep_duration_h', 'resting_hr_bpm')
+                provenance = {key: {'source_file': 'test-only.csv', 'source_key': key} for key in fields}
+                db.execute('INSERT INTO observation_provenance VALUES (?, ?)', ('r', json.dumps({'provenance': provenance})))
+            initial = audit_legacy_store(path)
+            self.assertEqual(initial['source_traceable_fields']['sleep_start_hour'], 1)
+            self.assertIsNone(initial['complete_source_traceable_objective8_rows'])
+            self.assertIsNone(initial['complete_source_traceable_joint12_rows'])
+            self.assertIn('sleep_midpoint_h', initial['stored_panel_coverage']['objective8']['missing_columns'])
+            self.assertEqual(initial['stored_panel_coverage']['objective8']['status'], 'requires_source_derivation')
+            with closing(sqlite3.connect(path)) as db, db:
+                for key in JOINT12:
+                    if key not in fields:
+                        db.execute(f'ALTER TABLE observations ADD COLUMN "{key}" REAL')
+                        db.execute(f'UPDATE observations SET "{key}"=1')
+                    provenance[key] = {'source_file': 'test-only.csv', 'source_key': key}
+                db.execute('UPDATE observation_provenance SET payload=?', (json.dumps({'provenance': provenance}),))
+            complete = audit_legacy_store(path)
+            self.assertEqual(complete['complete_source_traceable_objective8_rows'], 1)
+            self.assertEqual(complete['complete_source_traceable_joint12_rows'], 1)
+            self.assertFalse(complete['prospective_validation_ready'])
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute('UPDATE observations SET first_caloric_h=NULL')
+            incomplete = audit_legacy_store(path)
+            self.assertEqual(incomplete['complete_source_traceable_objective8_rows'], 0)
+            self.assertEqual(incomplete['complete_source_traceable_joint12_rows'], 0)
+            self.assertEqual(incomplete['stored_panel_coverage']['objective8']['missing_columns'], [])
+
     def test_recurrent_events_cannot_inflate_calibration_participant_count(self):
         from rhythm_dnb.research.calibrate import calibrate
         from rhythm_dnb.contracts import MonitoringPeriod

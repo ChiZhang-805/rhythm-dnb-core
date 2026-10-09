@@ -1,5 +1,35 @@
 # 服务器训练
 
+## 这次准备好的全流程实验
+
+把交付包解压到服务器项目目录，进入该目录，再执行下面的命令。包内包含已核对的安装包、源码、固定数据划分和 CPU 检查；基模 `models/qwen3-8b/` 另传完整目录，或用下文的 `download-text` 命令下载。不要只传适配权重。
+
+```sh
+python -m pip install dist/*.whl
+python -m pip install "rhythm-dnb-core[research,text,quantized,io,plots]"
+python -m rhythm_dnb hardware
+python tools/run_research.py gpu --packet runs/end-to-end/packet \
+  --plan runs/end-to-end/preflight/gpu-plan.json --base models/qwen3-8b \
+  --output runs/end-to-end/gpu --plots
+```
+
+该命令依次完成两组学习率的 Qwen 微调、按验证误差选择模型、整批文本打分、联合指标的 DNB 筛选、阈值校准及测试。使用单张 CUDA GPU 运行协调程序；不要对这个命令套 `torchrun`。断线后重跑同一命令，会复用完成的训练和分数缓存；未完成训练从完整的 epoch 续跑，要求软件和设备环境不变。没有保存完的 epoch 会重算。建议在 `tmux` 中运行。
+
+最终看 `runs/end-to-end/gpu/joint-evaluation-*/summary.md`；`metrics.csv` 可用 Excel 打开，`result.json` 有置信区间和混淆矩阵，`comparison.png` 是对比图。选出的文本模型路径在 `training/selection.json`，需要连同固定基模保存。
+
+本轮使用既有模拟事件，主指标为未来预警的**平衡正确率**，同时看普通正确率、事件检出率、误报、提前天数和覆盖率。文本程度误差不是最终预警正确率。DNB 没有合格指标组或可用阈值时输出未知，保留失败结果，不自动降标准。
+
+参数与依据在 `configs/experiment.json`。这批队列只有 14 天，采用固定参考人群的 sDNB；前 5 天预测后续 7 天并留 2 天确认。它的 6 项可用客观量和 4 项文本量是单独的实验面板，正式 `objective8/joint12` 不变。文本分数未经独立依据校准，联合结果属于探索性验证；旧模型接触过部分 DNB 人员，所以本轮从固定基模重新训练。
+
+若修改源码、数据或配置，先在本地重新生成数据包并预检；不要继续沿用旧的计划。预检不加载神经网络、不占 GPU：
+
+```sh
+python tools/run_research.py preflight --packet runs/end-to-end/packet \
+  --base models/qwen3-8b --config configs/text/qwen.json --output runs/new-preflight
+```
+
+`prepare`、`evaluate` 的全部参数可通过各自的 `--help` 查看。最终测试人员与文本训练/验证人员隔离；按人和模板划分，原数据库不改写，掩去争议参考分、来源刷新和派生字段都有记录。已有历史测试不宣称是新封存的人工金标准。
+
 唯一主模型是 `Qwen/Qwen3-8B`，固定提交见 `configs/text/qwen.json`。采用 NF4 冻结底座、LoRA 微调及独立的程度/证据评分头；不让模型自由生成数字。MacBERT-base 配置仅供对照，两者使用同一真实语料和划分。
 
 ## 准备和启动
