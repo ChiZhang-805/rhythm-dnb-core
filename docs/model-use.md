@@ -59,3 +59,23 @@ python -m rhythm_dnb score-text-experiment \
 这一步完成“文本 → 数值”。输出中的 `eligible_for_primary_dnb: false` 表示它目前是实验文本模型，不能直接当作已经验证的节律紊乱 0/1 预警结果。
 
 需要只运行程度主模型时，去掉 `--evidence-checkpoint` 一行即可；原始程度分数不变。保留的其他实验文件夹用于对照，不会自动替换当前模型。
+
+## 运行完整预警
+
+本机的 `runs/end-to-end/frozen-warning-20261010/` 已保存 12 份研究模型及参考数据。每份约几十到几百 KB；读取连续指标并输出提醒只需 CPU。默认用原始划分的 `fold-1/history_robust_dnb`，不是挑测试成绩最高的一组。它属于参考稳定性实验，不替换正式人群预警入口。
+
+将交付包中的源码、模型和依赖清单放在同一项目目录，执行：
+
+```sh
+python -m pip install -e ".[research]" -c requirements-warning.lock
+python -m tools.use_research_warning score \
+  --bundle runs/end-to-end/frozen-warning-20261010/fold-1/history_robust_dnb \
+  --input runs/end-to-end/frozen-warning-replay-20261010/test-input.json \
+  --output runs/warning-output.json
+```
+
+上述输入是已保存的历史测试记录，用来核对安装，不是新增测试。使用自己的输入时保留 `source_id`、`source_sha256`、`domain`、`measurement_contract_id`、`as_of` 和 `rows`；每条记录含人物/记录编号、观察/可用/预测时间及 10 项指标，缺失写 `null`。列名、单位和绑定的文本模型见模型内 `metadata.json`。必须沿用该模型的量化方式；这里绑定的是全流程实验评分模型，不能混用本页前半部分的网页评分模型。
+
+每次提供完整历史；程序从头重放，按人每天 UTC 12:00 判断，只读当时已获得的记录。`score` 是实验风险分数，`risk_exceeds_threshold` 是当天是否超线，`warning` 是考虑连续两天和提醒间隔后的 0/1 提醒；缺数据为 `null`。不要把分数解释成患病概率。
+
+独立构造队列评价用同一入口的 `evaluate --bundle 模型目录 --input 输入.json --truth 结局.json --output 新目录`。结局与预测输入分开，程序拒绝旧人群及未完成的事件确认/随访，保留输入、方案和结果；不会重训或重选阈值。结局格式见 `tools/use_research_warning.py`。真实人群需使用 [训练与使用](training.md) 中的正式 `validate` 入口及对应结局定义；编号不同本身不证明数据独立。

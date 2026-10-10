@@ -1,0 +1,7 @@
+# Exact numerical runtime for the exported reference-stability warning bundles.
+# CPU only; text-model training and inference use their separate environment.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+tzdata==2026.4
