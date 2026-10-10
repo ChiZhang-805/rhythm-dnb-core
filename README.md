@@ -31,6 +31,8 @@ python -m rhythm_dnb --help
 
 现有自建数据的全流程实验用 `tools/run_research.py`：本地准备与检查 → GPU 训练和文本打分 → DNB/简单方法对照 → 最终预警正确率、漏报、误报及置信区间。命令见 [服务器训练](docs/training.md)。这条实验路径单独标明模拟数据；不能替代正式人群验证。
 
+没有找到合格 DNB 群组时，先用 `tools/diagnose_discovery.py --help` 排查各项条件和时间点；`tools/check_discovery_power.py --help` 检查筛选方法是否容易漏掉已知信号。这两项在 CPU 上运行，不修改原实验，也不产生新的预警准确率。
+
 本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
 
 ## 使用说明
