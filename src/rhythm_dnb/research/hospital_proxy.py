@@ -97,10 +97,13 @@ def score_vector(row, features):
     return None if any(v is None or not np.isfinite(v) for v in values) else np.asarray(values, dtype=float)
 
 
-def held_out_scores(rows, plan):
+def held_out_scores(rows, plan, *, scored_occasions=(1, 2, 3), calibration_occasions=(1, 2, 3)):
     """All scores use only current numeric inputs; thresholds never use proxy outcomes."""
     # PSEUDOCODE: split people -> fit first-record background -> calibrate on separate people -> score held-out people.
     check_plan(plan)
+    for occasions in (scored_occasions, calibration_occasions):
+        if not occasions or len(set(occasions)) != len(occasions) or not set(occasions) <= {1, 2, 3}:
+            raise ValueError('Declare unique prediction/calibration occasions before the final record.')
     grouped = group_rows(rows)
     people = np.asarray(sorted(grouped))
     order = np.random.default_rng(plan['seed']).permutation(len(people))
@@ -130,7 +133,7 @@ def held_out_scores(rows, plan):
                     'module': [features[i] for i in parts['module']] if parts else [],
                     'status': 'scored' if parts else 'undefined_sdnb_ratio'}
 
-        calibration_rows = [r for p in calibration for r in grouped[p][:3]]
+        calibration_rows = [r for p in calibration for r in grouped[p] if r['occasion'] in calibration_occasions]
         calibrated = [(r, score(r)) for r in calibration_rows]
         common = [(r, s) for r, s in calibrated if all(s['scores'][m] is not None for m in METHODS)]
         if len({r['participant_id'] for r, _ in common}) < 2:
@@ -143,7 +146,7 @@ def held_out_scores(rows, plan):
             'features': features, 'center': center.tolist(), 'scale': scale.tolist(),
             'calibration_records': [r['record_id'] for r, _ in common], 'thresholds': thresholds})
         for person in test:
-            for current in grouped[person][:3]:
+            for current in (r for r in grouped[person] if r['occasion'] in scored_occasions):
                 scored = score(current)
                 predictions.append({'record_id': current['record_id'], 'participant_id': person,
                     'occasion': current['occasion'], 'fold': fold, **scored,

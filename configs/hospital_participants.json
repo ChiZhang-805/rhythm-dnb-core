@@ -1,0 +1,18 @@
+{
+  "purpose": "exploratory_person_level_observed_timing_variability_labels",
+  "scoring_plan": "hospital_proxy.json",
+  "prediction_occasions": [1],
+  "calibration_occasions": [1],
+  "outcome_occasions": [2, 3, 4],
+  "minimum_complete_outcome_occasions": 2,
+  "label_aggregation": "any_same_pair_sleep_midpoint_and_mean_meal_shift",
+  "design": {
+    "unit": "One person, one provisional binary reference label, one first-record held-out prediction. No per-record accuracy substituted for person accuracy.",
+    "label": "Among available complete later source records 2-4, label 1 if any pair has BOTH sleep-midpoint displacement and mean absolute three-meal displacement >= 60 minutes; otherwise label 0 (no qualifying change observed). Retain 30/90 minute sensitivities from the existing plan. This detects sampled timing variability, not confirmed disorder, worsening or persistent dysregulation.",
+    "missing": "Require at least two complete later records. No guessed clock values or skipped meals imputed. Keep the number of observed records, all missing-field reasons and a complete-three-record sensitivity analysis. A zero labels the observed records only; it does not establish absence of disorder in unobserved periods.",
+    "timing": "Primary pilot assumes source records 2-4 follow record 1; ambiguous calendar dates stay unresolved. Target variability itself is independent of the order of the three later records. Report the subset with all four unambiguous, unique, increasing month/day dates separately. No onset or clinical lead time inferred.",
+    "independence": "No label depends on model score. Predictor fields exclude all five endpoint clocks. Reference and calibration use only first records of disjoint people, with the existing fixed folds. Clinical stability of reference people is unverified. No threshold fitting on outcomes.",
+    "interpretation": "Observed-rule agreement is not the accuracy against independently established clinical outcomes in the 17-person influenza study. This new unit/endpoint is exploratory after previous pair-level inspection; it is not a new sealed validation set.",
+    "preservation": "Write a new private run, freeze all plans and code hashes before scoring/labeling, keep all people and unknowns. Never overwrite the hospital source, existing labels or earlier experiments."
+  }
+}
