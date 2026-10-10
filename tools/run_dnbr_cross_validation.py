@@ -110,9 +110,9 @@ def execute_r(command, log):
         subprocess.run(command, check=True, stdout=stream, stderr=subprocess.STDOUT)
 
 
-def run_fold(data, manifest, inference, roles, settings, discovery, scaler, args, output):
+def run_fold(data, manifest, inference, roles, settings, discovery, scaler, args, output, features=None):
     # PSEUDOCODE: develop modules -> freeze calibration -> evaluate untouched people under the same policy.
-    features = list(OBJECTIVE) + list(TEXT)
+    features = list(OBJECTIVE) + list(TEXT) if features is None else list(features)
     protocol = data['protocol']
     config = validate_protocol(protocol)
     exported, developed = output / 'development-input', output / 'development'

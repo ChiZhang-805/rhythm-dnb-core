@@ -204,4 +204,8 @@ R 算术检查：`Rscript tests/core/check_dnbr.R ../Caches/rhythm-dnb-r/library
 
 个人化候选与组合预警实验：`python -m tools.run_dnbr_personal --packet 原数据包 --predictions 原文本预测.json --parent 三组交叉验证目录 --library R包目录 --output 新目录`。参数在 `configs/dnbr_personal.json`；每个当前向量独立构图，组合权重仅用开发人群内部交叉验证选择，报警阈值另用校准人群确定。复用已核验文本分数，CPU 可完成；组合方法的成绩单列，不称作纯 DNB 正确率。
 
+量化误差排查：先运行 `python -m tools.run_dnbr_measurement export --database 原SQLite --packet 原数据包 --output 参考分数.json`，再运行其 `evaluate` 子命令，传入 `--packet`、`--predictions`、`--references`、`--parent`（三组交叉验证目录）、`--library` 和新的 `--output`。比较模型分数、编写时参考分数、仅客观指标；均重新发现和校准。只读原数据库，参考分数不视为独立人工真值，也不用于替换部署时的文本模型。
+
+分数校准：`python -m tools.run_dnbr_calibration score --packet 原数据包 --checkpoint 本轮选定检查点 --base 基模目录 --predictions 原DNB文本预测 --output 新目录`，在 GPU 上保存开发文本分数及逐条续算缓存。完成后执行 `evaluate` 子命令，保持相同参数和输出目录，另加 `--parent 三组交叉验证目录 --library R包目录`。只学习四项程度分数的修正，不改语境依据门槛；先保存校准规则，再运行 DNB。恢复推理时数据、代码和运行条件必须一致；失败的评价目录保留，不覆盖重跑。
+
 覆盖全部已有纵向模拟人群时，在项目目录运行 `python -m tools.run_dnbr_cross_validation --packet 原数据包 --predictions 原文本预测.json --parent 原预警实验目录 --library R包目录 --output 新目录`。沿用原模型、结局和算法参数，固定三组轮换，各组分别发现指标组、校准阈值，每个人只进入一次测试；原封存文件不改写。先复核原 300 次判断，再汇总全部 180 人、900 次判断，输出 `summary.md`、`result.json`、图表与哈希清单。这是已使用模拟队列上的探索性交叉验证，不是新增 900 人或真实人群验证。

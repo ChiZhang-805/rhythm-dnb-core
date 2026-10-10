@@ -1,4 +1,7 @@
 parameter,default,location,role,rationale,adjustment,basis_status,source_or_selection
+text_score_correction_strength,0|0.25|0.5|0.75,tools/text_score_calibration.py,文本程度分数修正比例,包含不修正；固定四档比较并保留至少25%原分数斜率避免拟合平台消除方差,只按隔离开发文本的按人等权交叉拟合误差选择；不能按DNB测试成绩选择,experimental_grid,有界递增保序回归与原分数混合；网格不宣称最优
+text_score_calibration_folds,2,tools/text_score_calibration.py,校准内部交叉拟合,保留人物及同源模板完整连通组；两组实际1211和1940条而非强拆成相等份,新增数据时重新核验人物和模板隔离；不拆组凑数量,development_cross_fitting,仅原文本开发验证集；曾用于基模微调检查点选择所以不是独立测试
+text_score_calibration_seed,20261010,tools/text_score_calibration.py,固定校准分组,便于重复运行同一个方案；种子不具有科学最优含义,在新实验执行前固定；不得根据测试成绩换种子,reproducibility,保存计划及具体分组身份
 personal_modules,all_proper_internal_tree_branches,configs/dnbr_personal.json,个人指标组合候选,比较单连接树全部非平凡分支避免任意聚类高度；不宣称统计检验通过,只在新登记实验修改候选规则；不看测试挑分支,exploratory_project_adaptation,Liu2017单样本思路与本文连续网络适配
 personal_ridge_penalties,1e-4|1e-3|1e-2|1e-1|1|10|100,configs/dnbr_personal.json,组合权重收缩候选,训练尺度统一后跨七个数量级比较弱至强收缩；不是七个已验证最佳值,仅开发人群内交叉验证选择；边界最优不依据外部测试扩展范围,development_cv,按人等权log loss；只惩罚斜率
 personal_inner_folds,3,configs/dnbr_personal.json,按人内部验证,每轮60名开发者分三折保持每折有正负人物；同人记录不可拆散,新数据下按独立人物及事件数预先登记,exploratory_protocol,StratifiedGroupKFold固定随机种子
