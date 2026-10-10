@@ -171,3 +171,18 @@ python -m rhythm_dnb score --bundle "$BUNDLE_PATH" \
 首次 `score` 省略 `--state`；以后直接传上次完整输出。`validate` 默认沿用冻结配置的重采样次数，显式 `--bootstrap` 可覆盖并会记录。拿到服务器后依次核对系统/驱动、GPU 型号与显存、数据路径，再用实际训练记录确定批量和长度。
 
 实现依据：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-8B)、[QLoRA 官方 7B 配置](https://github.com/artidoro/qlora/blob/main/scripts/finetune_guanaco_7b.sh)、[PyTorch DDP](https://docs.pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html)。
+
+## R DNBr 计算
+
+`tools/run_dnbr.R` 直接调用固定提交的 ChenLab DNBr；CPU 即可。当前已完成源码审阅与数据导出检查，**R 入口尚未实际运行验收**，不能把它当成已完成的个人预警模型。
+
+安装好 R 后，在项目目录执行以下命令。最后一个参数是自行指定的项目 R 包目录，不要放到 Q 盘根目录：
+
+```sh
+Rscript tools/run_dnbr.R install configs/dnbr.json ../Caches/rhythm-dnb-r/library
+Rscript tools/run_dnbr.R analyze runs/end-to-end/dnbr-input-20261010 runs/end-to-end/dnbr-analysis-20261010 ../Caches/rhythm-dnb-r/library
+```
+
+本机已准备 `runs/end-to-end/dnbr-input-20261010`（30 名原开发人群、10 项指标、两个原定阶段）；这些数据不进 Git。其他机器先传入该目录，或运行 `python tools/export_dnbr.py --help`，从原封存数据、文本预测和评价目录重新导出。
+
+输出包括候选组合、各阶段分数、图表、R 环境与哈希。它们只是开发分析；个人参考网络、报警阈值和独立测试需另行固定。每次使用新的输出目录，不覆盖旧实验。

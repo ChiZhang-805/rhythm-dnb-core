@@ -1,0 +1,22 @@
+{
+  "repository": "Kaiyu-W/DNBr",
+  "revision": "29fd84e555b8e591fb28562f6369daef42fdd313",
+  "purpose": "development_analysis_not_validated_warning_model",
+  "high_cutoff": -1,
+  "cutree_method": "h",
+  "cutree_cutoff": 0.98,
+  "module_min_inclusive": 2,
+  "module_max_inclusive": null,
+  "ntop": 5,
+  "size_effect": true,
+  "force_allgene": true,
+  "notes": {
+    "high_cutoff": "Keep the small prespecified rhythm panel; CV screening is unsuitable for centered mixed-unit features.",
+    "cutree_cutoff": "Upstream starting setting, not a validated optimum for rhythm data. Do not tune using held-out outcomes.",
+    "module_bounds": "At least two internal features and at least one external feature; DNBr takes exclusive bounds.",
+    "ntop": "Retain up to five ranks per development stage, matching the prior candidate-count budget; not five validated biomarkers.",
+    "size_effect": "Keep DNBr's default sqrt(module_size) multiplier. This is feature count, not participant count.",
+    "force_allgene": "Keep the same prespecified feature universe at every stage.",
+    "selection": "Call upstream clustering and ranking directly. Historical bootstrap/max-statistic gates remain only in the preserved old experiment."
+  }
+}

@@ -33,6 +33,8 @@ python -m rhythm_dnb --help
 
 没有找到合格 DNB 群组时，先用 `tools/diagnose_discovery.py --help` 排查各项条件和时间点；`tools/check_discovery_power.py --help` 检查筛选方法是否容易漏掉已知信号。这两项在 CPU 上运行，不修改原实验，也不产生新的预警准确率。
 
+新的 R 接入直接调用 ChenLab 的 **DNBr**，入口为 `tools/export_dnbr.py`、`tools/run_dnbr.R`。目前是开发数据分析入口，尚未完成 R 运行验收或个人预警校准；计算思路和适配设置见 [研究方案](docs/research.md#dnb-的-r-接入)。
+
 本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
 
 ## 使用说明
