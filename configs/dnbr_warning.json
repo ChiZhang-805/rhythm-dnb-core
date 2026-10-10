@@ -1,0 +1,15 @@
+{
+  "purpose": "exploratory_dnbr_discovery_fixed_module_sdnb",
+  "selection_stage": "pre_event",
+  "max_modules": 5,
+  "aggregation": "maximum_all_modules_required",
+  "pair_convention": "paper_k_squared",
+  "epsilon": 1e-8,
+  "sdnb_size_multiplier": 1,
+  "notes": {
+    "selection": "Freeze up to five distinct eligible modules by pre-event DNBr score, using training people only. Candidates are not statistically confirmed biomarkers.",
+    "individual": "Use DNBr NetworkCreate, sED(scale=FALSE) and CI(n=1) on unchanged reference-scaled measurements; aggregate differential correlations according to Liu 2017 Eq. 6. Fixed development modules are a project adaptation, not the paper's per-target discovery algorithm.",
+    "bounds": "Keep the previous numerical guard and module-count budget. A missing component invalidates the score, never creates a zero risk.",
+    "evaluation": "Preserve the packet's people, outcomes, forecast days, lead time, false-alarm budget and calibration objective. Refit thresholds on validation only. This historical test has previously been inspected; no clinical or fresh confirmatory claim."
+  }
+}

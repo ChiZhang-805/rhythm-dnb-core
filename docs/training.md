@@ -174,7 +174,7 @@ python -m rhythm_dnb score --bundle "$BUNDLE_PATH" \
 
 ## R DNBr 计算
 
-`tools/run_dnbr.R` 直接调用固定提交的 ChenLab DNBr；CPU 即可。当前已完成源码审阅与数据导出检查，**R 入口尚未实际运行验收**，不能把它当成已完成的个人预警模型。
+`tools/run_dnbr.R` 直接调用固定提交的 ChenLab DNBr，已在服务器运行验收；这部分 CPU 即可。文本模型和已核验的文本预测可以复用。
 
 安装好 R 后，在项目目录执行以下命令。最后一个参数是自行指定的项目 R 包目录，不要放到 Q 盘根目录：
 
@@ -185,4 +185,19 @@ Rscript tools/run_dnbr.R analyze runs/end-to-end/dnbr-input-20261010 runs/end-to
 
 本机已准备 `runs/end-to-end/dnbr-input-20261010`（30 名原开发人群、10 项指标、两个原定阶段）；这些数据不进 Git。其他机器先传入该目录，或运行 `python tools/export_dnbr.py --help`，从原封存数据、文本预测和评价目录重新导出。
 
-输出包括候选组合、各阶段分数、图表、R 环境与哈希。它们只是开发分析；个人参考网络、报警阈值和独立测试需另行固定。每次使用新的输出目录，不覆盖旧实验。
+随后执行个人预警实验（路径按本机调整）：
+
+```sh
+python tools/run_dnbr_warning.py \
+  --packet runs/end-to-end/packet \
+  --predictions runs/end-to-end/gpu/text-scores/predictions.json \
+  --input runs/end-to-end/dnbr-input-20261010 \
+  --development runs/end-to-end/dnbr-analysis-20261010 \
+  --config configs/dnbr_warning.json \
+  --library ../Caches/rhythm-dnb-r/library \
+  --output runs/end-to-end/dnbr-warning
+```
+
+程序依次保存方案、候选组、校准阈值、测试逐日预测、正确率/漏报/误报/提前量及图表，并生成哈希清单。每次用新目录，不覆盖旧实验。`summary.md` 是简短结论，`result.json` 是完整结果。无需重新训练 Qwen；新方案不沿用旧阈值，不根据测试成绩改参数。
+
+R 算术检查：`Rscript tests/core/check_dnbr.R ../Caches/rhythm-dnb-r/library tools/score_dnbr.R`。运行时还会逐条核对 R/Python 的单样本公式；数据不足或分母接近零保持未知。
