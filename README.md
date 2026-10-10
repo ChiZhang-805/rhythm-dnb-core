@@ -35,6 +35,8 @@ python -m rhythm_dnb --help
 
 R 路径已在服务器实际运行：`tools/run_dnbr.R` 调用 ChenLab **DNBr** 发现候选组，`tools/run_dnbr_warning.py` 接入个人 sDNB、阈值校准和测试。个人计算调用作者的网络与评分函数，并按论文汇总；固定开发群组是项目适配。新实验保留旧结果，不能把候选排名称为统计检验通过。见 [研究方案](docs/research.md#dnb-的-r-接入)。
 
+2026-10-10 全部现有纵向模拟样本的三组交叉验证：180 人、900 次逐日判断，DNB 正确率及平衡正确率 **71.44%（643/900）**，简单参考偏离对照 **82.89%**。90 个模拟事件检出 71 个、漏掉 19 个，另有 19 次误报提醒，提前量中位数 4 天。DNB 尚未胜过该对照；这是已使用模拟数据上的探索性结果，不是真实人群正确率。入口为 `python -m tools.run_dnbr_cross_validation --help`，各人仅计入一次测试。
+
 本机正式源码位于 `Q:/NAVA-Workspace/rhythm-dnb-core`；`models/` 放本地底座，`runs/` 放运行结果，二者不进 Git。共享下载缓存放在 `Q:/NAVA-Workspace/Caches/`，旧材料保留在归档或原交付目录，不作为当前源码。服务器路径通过命令行显式指定。
 
 ## 使用说明
