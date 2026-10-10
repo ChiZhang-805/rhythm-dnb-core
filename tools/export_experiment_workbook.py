@@ -200,16 +200,82 @@ def project_database(database, packet_rows, predictions, answers):
                   'warning_values': len(matched_warnings)}
 
 
-def write_workbook(rows, path):
+def attach_expanded_results(rows, packet, scores_path, evaluation):
+    # PSEUDOCODE: add verified results to their exact input rows; preserve reference answers and earlier predictions.
+    from rhythm_dnb.research.expanded_results import verify_archive
+    plan = read_json(Path(packet)/'plan.json')
+    if fingerprint({k: v for k, v in plan.items() if k != 'id'}) != plan['id']:
+        raise ValueError('Expanded packet identity changed.')
+    for name, digest in plan['files'].items():
+        if Path(name).name != name or file_hash(Path(packet)/name) != digest:
+            raise ValueError('Expanded packet file changed.')
+    result = read_json(scores_path)
+    if (fingerprint({k: v for k, v in result.items() if k != 'id'}) != result['id']
+            or result['packet_id'] != plan['id'] or result['model_id'] != plan['text_model_id']):
+        raise ValueError('Expanded text result changed.')
+    by_id = unique(rows, lambda r: r['record_id'])
+    bindings = read_json(Path(packet)/'text-bindings.json')
+    bound = set()
+    for binding in bindings:
+        row = by_id[binding['record_id']]
+        identity = (binding['record_id'], binding['category'])
+        text = row[binding['category']+'_description_text'].strip()
+        if (identity in bound or fingerprint([binding['category'], text]) != binding['task_id']
+                or row['participant_id'] != binding['participant_id']):
+            raise ValueError('Expanded scores do not match the workbook input.')
+        bound.add(identity)
+        values = result['predictions'][binding['task_id']]
+        if set(values) != set(CATEGORIES[binding['category']][1]):
+            raise ValueError('Expanded score has the wrong metrics.')
+        for key, value in values.items():
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100:
+                raise ValueError('Invalid expanded text score.')
+            if 'model_'+key in row and row['model_'+key] != value:
+                raise ValueError('An earlier model result would be overwritten.')
+            row['model_'+key] = value
+    if len(bound) != plan['original_records']*4:
+        raise ValueError('Expanded text coverage is incomplete.')
+    verify_archive(evaluation)
+    warning = read_json(Path(evaluation)/'result.json')
+    if warning['packet_id'] != plan['id']:
+        raise ValueError('Expanded warning result has a different packet.')
+    measurements = read_json(Path(packet)/'measurements.json')
+    lookup = {(r['participant_id'], instant(r['issued_at'])): r for r in measurements}
+    mapping = {'personal_dnb': 'reference_robust_dnb', 'mean_deviation': 'reference_robust_deviation',
+               'history_dnb': 'history_robust_dnb', 'history_control': 'history_robust_control',
+               'rolling_dnb': 'rolling_dnb'}
+    seen = set()
+    for method, column in mapping.items():
+        for record in read_json(Path(evaluation)/(method+'-test-alerts.json')):
+            source = lookup[(record['participant_id'], instant(record['issued_at']))]
+            row = by_id[source['record_id']]
+            identity = (source['record_id'], method)
+            if identity in seen or row['split'] != 'test' or row['future_event_7d'] != record['label']:
+                raise ValueError('Expanded warning identity/outcome mismatch.')
+            seen.add(identity)
+            if any(row[k] != value for k, value in source['features'].items()):
+                raise ValueError('Expanded warning inputs changed.')
+            row[column+'_score'], row[column+'_warning'] = record['score'], int(record['warning'])
+            row['warning_method'] = '个人稳定日参考'
+    for row in rows:
+        if row.get('reference_robust_dnb_score') is not None and 'warning_method' not in row:
+            row['warning_method'] = '稳定参考人群'
+    columns = [*COLUMNS, ('warning_method', 'DNB参考方式', 'warning'),
+               ('rolling_dnb_score', '滚动DNB分数', 'warning'), ('rolling_dnb_warning', '滚动DNB预警', 'warning')]
+    return columns, {'text_prediction_rows': len(bound)//4, 'expanded_warning_values': len(seen),
+                     'expanded_plan_id': plan['id'], 'expanded_text_result_id': result['id']}
+
+
+def write_workbook(rows, path, columns=COLUMNS):
     # PSEUDOCODE: export one visible, filtered sheet; display decimals without changing stored values.
     wb = Workbook(write_only=True)
     ws = wb.create_sheet('实验数据')
     ws.freeze_panes = 'D2'
     ws.sheet_view.zoomScale = 85
     ws.row_dimensions[1].height = 42
-    ws.auto_filter.ref = f'A1:{get_column_letter(len(COLUMNS))}{len(rows) + 1}'
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(columns))}{len(rows) + 1}'
     header = []
-    for i, (key, label, group) in enumerate(COLUMNS, 1):
+    for i, (key, label, group) in enumerate(columns, 1):
         cell = WriteOnlyCell(ws, label)
         cell.font = Font(name='Microsoft YaHei', bold=True, color='FFFFFF', size=10)
         cell.fill = PatternFill('solid', fgColor=COLORS[group])
@@ -220,7 +286,7 @@ def write_workbook(rows, path):
     ws.append(header)
     for row in rows:
         cells = []
-        for key, _, _ in COLUMNS:
+        for key, _, _ in columns:
             value = row.get(key)
             cell = WriteOnlyCell(ws, value)
             if isinstance(value, str):
@@ -236,23 +302,23 @@ def write_workbook(rows, path):
     wb.save(path)
 
 
-def verify_workbook(path, rows):
+def verify_workbook(path, rows, columns=COLUMNS):
     # PSEUDOCODE: compare every exported cell, including blank/zero distinctions and float precision.
     wb = load_workbook(path, read_only=True, data_only=False)
     try:
         if wb.sheetnames != ['实验数据']:
             raise ValueError('Unexpected worksheets.')
-        values = wb.active.iter_rows(values_only=True, max_col=len(COLUMNS))
-        if next(values) != tuple(label for _, label, _ in COLUMNS):
+        values = wb.active.iter_rows(values_only=True, max_col=len(columns))
+        if next(values) != tuple(label for _, label, _ in columns):
             raise ValueError('Unexpected column headers.')
         seen = set()
         for expected, actual in zip_longest(rows, values):
-            if expected is None or actual is None or len(actual) != len(COLUMNS):
+            if expected is None or actual is None or len(actual) != len(columns):
                 raise ValueError('Exported row count or width differs.')
             if actual[0] in seen:
                 raise ValueError('Duplicate exported record.')
             seen.add(actual[0])
-            for (key, _, _), value in zip(COLUMNS, actual):
+            for (key, _, _), value in zip(columns, actual):
                 wanted = expected.get(key)
                 if type(wanted) is float and type(value) in (int, float):
                     equal = math.isclose(wanted, value, rel_tol=1e-14, abs_tol=1e-12)
@@ -260,7 +326,7 @@ def verify_workbook(path, rows):
                     equal = wanted == value or wanted == '' and value is None
                 if not equal:
                     raise ValueError(f'Export changed {expected["record_id"]}: {key}')
-        return {'rows': len(seen), 'columns': len(COLUMNS), 'cells_checked': len(seen) * len(COLUMNS)}
+        return {'rows': len(seen), 'columns': len(columns), 'cells_checked': len(seen) * len(columns)}
     finally:
         wb.close()
 
@@ -319,7 +385,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('database', 'workbook', 'archive', 'packet', 'text-predictions', 'decisions'):
         parser.add_argument('--' + name, required=True, type=Path)
+    for name in ('expanded-packet', 'expanded-scores', 'expanded-evaluation'):
+        parser.add_argument('--'+name, type=Path)
     args = parser.parse_args()
+    expanded = (args.expanded_packet, args.expanded_scores, args.expanded_evaluation)
+    if any(expanded) and not all(expanded):
+        raise ValueError('Provide all three expanded experiment paths together.')
     paths = {name: getattr(args, name).resolve() for name in
              ('database', 'workbook', 'archive', 'packet', 'text_predictions', 'decisions')}
     if len(set(paths.values())) != len(paths):
@@ -336,11 +407,15 @@ def main():
         old.close()
     packet_rows, result, answers, packet_id = saved_results(args.packet, args.text_predictions, args.decisions)
     rows, counts = project_database(args.database, packet_rows, result['predictions'], answers)
+    columns = COLUMNS
+    if all(expanded):
+        columns, extended = attach_expanded_results(rows, *expanded)
+        counts.update(extended)
     print(json.dumps({'stage': 'source_join_verified', **counts}), flush=True)
     existing_checked = verify_existing_inputs(args.workbook, rows)
     staged = args.archive / 'quantified_data.xlsx'
-    write_workbook(rows, staged)
-    checked = verify_workbook(staged, rows)
+    write_workbook(rows, staged, columns)
+    checked = verify_workbook(staged, rows, columns)
     if any(file_hash(paths[key]) != digest for key, digest in before.items()):
         raise ValueError('An input changed during export; original workbook not replaced.')
     backup = args.archive / 'quantified_data.before.xlsx'
@@ -353,7 +428,7 @@ def main():
                'text_prediction_id': result['id'], 'counts': counts, 'verification': checked,
                'existing_workbook_cells_checked': existing_checked,
                'old_sheets': old_sheets, 'new_sheets': ['实验数据'],
-               'columns': [{'key': k, 'label': label, 'group': g} for k, label, g in COLUMNS],
+               'columns': [{'key': k, 'label': label, 'group': g} for k, label, g in columns],
                'removed_original_columns': [k for k in old_columns if k not in {c[0] for c in COLUMNS}],
                'cohorts': dict(Counter(r['source_dataset'] for r in rows)),
                'missing_values_preserved': True, 'source_database_changed': False,

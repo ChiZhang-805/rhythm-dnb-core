@@ -28,6 +28,10 @@ def scan(root):
         item = {'path': name, 'bytes': len(content), 'sha256': sha256(content).hexdigest()}
         if re.search(r'(?i)(?:^|[_-])v\d+(?=[_.-]|$)', path.name):
             findings.append(name + ': explicit project release label in filename')
+        if path.suffix.lower() in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf'):
+            item['content_kind'] = 'binary_asset_hashed_without_text_parsing'
+            inventory.append(item)
+            continue
         try:
             text = content.decode('utf-8-sig')
             if path.suffix == '.py':
