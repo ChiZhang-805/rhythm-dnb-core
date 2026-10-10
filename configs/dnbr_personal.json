@@ -1,0 +1,27 @@
+{
+  "purpose": "exploratory_personal_modules_and_combined_warning",
+  "network": "continuous_delta_pearson",
+  "distance": "2-abs(delta_PCC)",
+  "linkage": "single",
+  "features": "all_prespecified_features",
+  "modules": "all_proper_internal_tree_branches",
+  "aggregation": "maximum_all_modules_required",
+  "pair_convention": "paper_k_squared",
+  "epsilon": 1e-8,
+  "primary_method": "personal_dnb",
+  "secondary_method": "combined_warning",
+  "combined_predictors": ["reference_deviation", "personal_dnb"],
+  "coefficient_bounds": "nonnegative",
+  "transform": "log1p_then_training_standardization",
+  "penalties": [0.0001, 0.001, 0.01, 0.1, 1, 10, 100],
+  "inner_folds": 3,
+  "selection_metric": "participant_weighted_log_loss",
+  "notes": {
+    "modules": "Per-target topology uses the fixed stable reference and the current vector only. Score every proper branch, avoiding an arbitrary tree cut; at least two internal features and one external feature.",
+    "screening": "Continuous network project adaptation, not the published significance-screened full algorithm or a statistical DNB certification. No old discovery gate or old result is changed.",
+    "small_panel": "All ten prespecified features retained; no arbitrary top-quartile deletion of a small panel. Canonical feature order resolves linkage ties reproducibly.",
+    "combined": "A separate supervised warning model. Nonnegative weights preserve the prespecified risk directions; a useless network signal can receive zero weight. Do not call its accuracy pure DNB accuracy.",
+    "penalties": "Mean weighted logistic loss plus lambda/2 times squared slopes. Seven fixed decades cover weak to strong shrinkage after training-only scaling; development person-CV chooses the value, not test outcomes.",
+    "validation": "Existing outer person rotations and warning policy preserved. Each inner fold refits its scaler. Historical inspected simulation supports exploration, not clinical or fresh-test claims."
+  }
+}

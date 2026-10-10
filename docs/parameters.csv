@@ -1,4 +1,9 @@
 parameter,default,location,role,rationale,adjustment,basis_status,source_or_selection
+personal_modules,all_proper_internal_tree_branches,configs/dnbr_personal.json,个人指标组合候选,比较单连接树全部非平凡分支避免任意聚类高度；不宣称统计检验通过,只在新登记实验修改候选规则；不看测试挑分支,exploratory_project_adaptation,Liu2017单样本思路与本文连续网络适配
+personal_ridge_penalties,1e-4|1e-3|1e-2|1e-1|1|10|100,configs/dnbr_personal.json,组合权重收缩候选,训练尺度统一后跨七个数量级比较弱至强收缩；不是七个已验证最佳值,仅开发人群内交叉验证选择；边界最优不依据外部测试扩展范围,development_cv,按人等权log loss；只惩罚斜率
+personal_inner_folds,3,configs/dnbr_personal.json,按人内部验证,每轮60名开发者分三折保持每折有正负人物；同人记录不可拆散,新数据下按独立人物及事件数预先登记,exploratory_protocol,StratifiedGroupKFold固定随机种子
+personal_coefficients,nonnegative,configs/dnbr_personal.json,组合信号方向,保持偏离越大及DNB越高不降低风险的预设方向；无用信号可获零权重,放开符号须另立方案和解释；不把零权重成绩算成网络贡献,method_constraint,带边界岭逻辑回归
+personal_transform,log1p_then_training_standardization,configs/dnbr_personal.json,输入尺度,抑制非负比值长尾且保留排序；尺度仅从开发训练折估计,修改后重新拟合权重和校准；未知保持缺失,method_constraint,log1p单调变换与训练内标准化
 study_id,behavioral-rhythm,StudyConfig,研究名称,计算规则以内容指纹追溯,沿用项目名称；修改计算后重建和校准产物,reproducibility,固定身份或随机过程；不作成绩择优
 panel_id,joint12,StudyConfig,研究选择,预定义12节点及objective8对照,预登记选择并分别校准不可按测试表现挑选,protocol_pending_validation,研究协议：docs/research.md；无文献证明本队列默认值最优
 baseline_days,14,StudyConfig,待验证研究默认,多个完整周的个人基线,14或21或28且保持足够端点窗口,protocol_pending_validation,研究协议：docs/research.md；无文献证明本队列默认值最优

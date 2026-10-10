@@ -202,4 +202,6 @@ python tools/run_dnbr_warning.py \
 
 R 算术检查：`Rscript tests/core/check_dnbr.R ../Caches/rhythm-dnb-r/library tools/score_dnbr.R`。运行时还会逐条核对 R/Python 的单样本公式；数据不足或分母接近零保持未知。
 
+个人化候选与组合预警实验：`python -m tools.run_dnbr_personal --packet 原数据包 --predictions 原文本预测.json --parent 三组交叉验证目录 --library R包目录 --output 新目录`。参数在 `configs/dnbr_personal.json`；每个当前向量独立构图，组合权重仅用开发人群内部交叉验证选择，报警阈值另用校准人群确定。复用已核验文本分数，CPU 可完成；组合方法的成绩单列，不称作纯 DNB 正确率。
+
 覆盖全部已有纵向模拟人群时，在项目目录运行 `python -m tools.run_dnbr_cross_validation --packet 原数据包 --predictions 原文本预测.json --parent 原预警实验目录 --library R包目录 --output 新目录`。沿用原模型、结局和算法参数，固定三组轮换，各组分别发现指标组、校准阈值，每个人只进入一次测试；原封存文件不改写。先复核原 300 次判断，再汇总全部 180 人、900 次判断，输出 `summary.md`、`result.json`、图表与哈希清单。这是已使用模拟队列上的探索性交叉验证，不是新增 900 人或真实人群验证。
