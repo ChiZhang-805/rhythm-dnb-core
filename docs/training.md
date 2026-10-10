@@ -208,4 +208,6 @@ R 算术检查：`Rscript tests/core/check_dnbr.R ../Caches/rhythm-dnb-r/library
 
 分数校准：`python -m tools.run_dnbr_calibration score --packet 原数据包 --checkpoint 本轮选定检查点 --base 基模目录 --predictions 原DNB文本预测 --output 新目录`，在 GPU 上保存开发文本分数及逐条续算缓存。完成后执行 `evaluate` 子命令，保持相同参数和输出目录，另加 `--parent 三组交叉验证目录 --library R包目录`。只学习四项程度分数的修正，不改语境依据门槛；先保存校准规则，再运行 DNB。恢复推理时数据、代码和运行条件必须一致；失败的评价目录保留，不覆盖重跑。
 
+RunPod 上将基模、R 包库和实验结果保存在持久盘 `/workspace`；容器重启后先检查路径与 R 程序是否仍可用。多个实验共用已核验的同一份基模，新增分数和报告集中到各自的 `runs/` 目录，不重复复制大权重；原训练与实验记录不作临时缓存删除。
+
 覆盖全部已有纵向模拟人群时，在项目目录运行 `python -m tools.run_dnbr_cross_validation --packet 原数据包 --predictions 原文本预测.json --parent 原预警实验目录 --library R包目录 --output 新目录`。沿用原模型、结局和算法参数，固定三组轮换，各组分别发现指标组、校准阈值，每个人只进入一次测试；原封存文件不改写。先复核原 300 次判断，再汇总全部 180 人、900 次判断，输出 `summary.md`、`result.json`、图表与哈希清单。这是已使用模拟队列上的探索性交叉验证，不是新增 900 人或真实人群验证。

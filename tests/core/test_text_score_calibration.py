@@ -10,10 +10,22 @@ import numpy as np
 from rhythm_dnb.provenance import fingerprint
 from rhythm_dnb.research.experiment_data import TEXT
 from tools.text_score_calibration import fit_curve, apply_curve, select_curves, development_rows
-from tools.run_dnbr_calibration import read_decisions
+from tools.run_dnbr_calibration import read_decisions, verify_plan
 
 
 class ScoreCalibrationTests(unittest.TestCase):
+    def test_saved_plan_accepts_json_sequences_but_rejects_changed_content(self):
+        # PSEUDOCODE: a disk round trip preserves plan identity; changed settings or forged content must still fail.
+        plan = {'rotations': (('train', 'validation', 'test'),), 'strengths': (0., .25, .5, .75)}
+        saved = json.loads(json.dumps({**plan, 'id': fingerprint(plan)}))
+        verify_plan(saved, plan)
+        saved['strengths'][-1] = 1.
+        with self.assertRaises(ValueError):
+            verify_plan(saved, plan)
+        saved['id'] = fingerprint({k: v for k, v in saved.items() if k != 'id'})
+        with self.assertRaises(ValueError):
+            verify_plan(saved, plan)
+
     def test_saved_forecasts_restore_comparable_instants(self):
         # PSEUDOCODE: a saved offset timestamp must align with the same instant used by live forecast evaluation.
         row={'participant_id':'a','issued_at':'2026-01-01T08:00:00+08:00','score':1,'label':1}

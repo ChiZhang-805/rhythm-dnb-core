@@ -33,6 +33,14 @@ def read_decisions(path):
                                        for k in ('issued_at', 'onset', 'label_available_at')}}) for row in read_json(path)]
 
 
+def verify_plan(saved, plan):
+    # PSEUDOCODE: compare canonical content so JSON lists match tuples without accepting changed settings or stale hashes.
+    identity = fingerprint(plan)
+    content = {k: v for k, v in saved.items() if k != 'id'}
+    if saved.get('id') != identity or fingerprint(content) != identity:
+        raise ValueError('Saved calibration plan differs; do not resume incompatible work.')
+
+
 def freeze(args):
     # PSEUDOCODE: freeze data exclusions, correction rules and code before any new GPU predictions or test results.
     data, manifest = load_packet(args.packet)
@@ -59,8 +67,7 @@ def freeze(args):
     output.mkdir(parents=True, exist_ok=True)
     path = output/'plan.json'
     if path.exists():
-        if read_json(path) != {**plan, 'id': fingerprint(plan)}:
-            raise ValueError('Saved calibration plan differs; do not resume incompatible work.')
+        verify_plan(read_json(path), plan)
     else:
         save_json(path, {**plan, 'id': fingerprint(plan)})
         source = output/'source'; source.mkdir()
