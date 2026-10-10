@@ -1,4 +1,13 @@
 parameter,default,location,role,rationale,adjustment,basis_status,source_or_selection
+temporal_history_days,3,configs/temporal_warning.json,仅当前及过去的短期均值波动和相邻日变化,现有共同预测段只有5天；3天提供短期变化的探索起点且不足历史不填零,更长真实记录中另行冻结窗口比较；不是最佳生理窗口,design_choice,当前可用历史长度；不得使用未来记录
+temporal_half_lives,0|1|2|4,configs/temporal_warning.json,个人DNB与偏离法的因果平滑,保留不平滑并用二倍间隔覆盖短于7天预测期的记忆长度,仅以开发人物内部三折AUC选择；不按测试回选,experimental_grid,时间间隔按实际经过天数；当前无分数继续拒判
+temporal_inner_folds,3,configs/temporal_warning.json,按人选择监督模型和平滑记忆,60名开发人物保持整人分组且两类结果在各折均存在,新数据先核验每折两类人数；禁止改成随机拆行,development_cross_fitting,https://scikit-learn.org/stable/modules/cross_validation.html
+temporal_logistic_c,0.1|1|10,configs/temporal_warning.json,岭逻辑回归逆正则强度,三个数量级覆盖较强至较弱惩罚；小样本限制搜索范围,仅开发人物等权log loss选取；达到2000次仍未收敛即失败,experimental_grid,https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
+temporal_tree_leaves,3|7,configs/temporal_warning.json,非线性对照树的容量,小叶数限制60名开发人物上的复杂度；两方法预算相同,新实验仅在开发人群比较；不据测试高低选择模型,experimental_grid,https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html
+temporal_tree_l2,1|10,configs/temporal_warning.json,非线性树的正则强度,两档正则避免不受约束的额外模型搜索,只用按人内部开发误差选择,experimental_grid,同一模型搜索预算不保证两种特征具有相同有效自由度
+temporal_tree_iterations,100,configs/temporal_warning.json,提升迭代上限,固定较小计算预算并关闭会随机拆行的自动早停,若增加轮数须另冻结开发比较；不是训练越久越好,design_choice,https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html
+temporal_tree_learning_rate,0.05,configs/temporal_warning.json,每棵树的更新幅度,与100次迭代共同作为保守探索设置；不宣称最优,仅以开发人群比较且匹配对照同样调整,design_choice,https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html
+temporal_tree_min_samples_leaf,20,configs/temporal_warning.json,叶节点最小预测日数,保留库的容量保护起点；20行不等于20名独立人物,根据新开发人数和学习曲线另行比较；人物隔离由交叉验证保证,design_choice,https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html
 text_score_correction_strength,0|0.25|0.5|0.75,tools/text_score_calibration.py,文本程度分数修正比例,包含不修正；固定四档比较并保留至少25%原分数斜率避免拟合平台消除方差,只按隔离开发文本的按人等权交叉拟合误差选择；不能按DNB测试成绩选择,experimental_grid,有界递增保序回归与原分数混合；网格不宣称最优
 text_score_calibration_folds,2,tools/text_score_calibration.py,校准内部交叉拟合,保留人物及同源模板完整连通组；两组实际1211和1940条而非强拆成相等份,新增数据时重新核验人物和模板隔离；不拆组凑数量,development_cross_fitting,仅原文本开发验证集；曾用于基模微调检查点选择所以不是独立测试
 text_score_calibration_seed,20261010,tools/text_score_calibration.py,固定校准分组,便于重复运行同一个方案；种子不具有科学最优含义,在新实验执行前固定；不得根据测试成绩换种子,reproducibility,保存计划及具体分组身份

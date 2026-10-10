@@ -1,0 +1,23 @@
+{
+  "purpose": "exploratory_causal_history_and_dnb_increment",
+  "primary_method": "temporal_dnb",
+  "secondary_method": "history_dnb",
+  "history_days": 3,
+  "half_lives_days": [0, 1, 2, 4],
+  "inner_folds": 3,
+  "logistic_c": [0.1, 1.0, 10.0],
+  "tree_leaves": [3, 7],
+  "tree_l2": [1.0, 10.0],
+  "tree_iterations": 100,
+  "tree_learning_rate": 0.05,
+  "tree_min_samples_leaf": 20,
+  "selection": "person_weighted_development_log_loss",
+  "smoothing_selection": "mean_development_fold_auc",
+  "notes": {
+    "history": "Current value, trailing three calendar-day mean and sample SD, and adjacent-day change. No future or other-person records; insufficient history remains missing, never zero fluctuation.",
+    "smoothing": "Zero retains the current score. One, two and four-day half-lives span short causal memory below the seven-day forecast horizon; select only on development people, not a claim of optimal biological windows.",
+    "models": "Three decade-spaced ridge strengths and four shallow boosted-tree settings allow nonlinear interactions with limited capacity for 60 development people. No row-random early stopping. Both matched arms receive exactly this search budget.",
+    "names": "Temporal DNB is causal smoothing of the existing personal DNB. History plus DNB is a supervised combined warning model and must not be called pure DNB.",
+    "evaluation": "Unchanged people, outcomes, monitoring days and notification policy. Historical constructed data are already inspected; all results are exploratory. Freeze thresholds on calibration people before testing. Preserve all methods, including failures."
+  }
+}
