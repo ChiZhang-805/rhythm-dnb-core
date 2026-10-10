@@ -1,0 +1,16 @@
+{
+  "purpose": "exploratory_reference_resampling_without_outcome_changes",
+  "replicates": 200,
+  "seed": 20261010,
+  "summary_quantiles": [0.25, 0.5, 0.75],
+  "primary_method": "reference_robust_dnb",
+  "secondary_method": "history_robust_dnb",
+  "selection": "unchanged_temporal_development_search_and_alarm_policy",
+  "notes": {
+    "reference": "Resample the same 60 independent stable reference people with replacement. Reuse each draw for all forecast people and dates. This does not create new independent participants.",
+    "budget": "200 draws provide a bounded preliminary sensitivity check of the median and middle-half spread; the spread is not a 95% confidence interval or a validated uncertainty probability.",
+    "formula": "Keep the previously audited single-sample DNB formula, all proper tree branches, fixed original scaling and all-modules-valid rule. No epsilon replacement for an undefined ratio.",
+    "controls": "Apply identical reference draws to mean-deviation controls. Both supervised arms share node history and deviation uncertainty; only the DNB arm adds score and association-ratio stability.",
+    "scope": "Evaluate all original common forecast dates, never select people or days by errors or outcomes. Historical authored data have already been inspected. Preserve all comparisons, including lack of improvement."
+  }
+}

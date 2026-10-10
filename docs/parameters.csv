@@ -1,4 +1,7 @@
 parameter,default,location,role,rationale,adjustment,basis_status,source_or_selection
+reference_resampling_replicates,200,configs/reference_stability.json,稳定参考人物组成的敏感性,有限预算下初步观察中位数和中间一半跨度；不是95%区间也不增加独立人数,扩展次数先冻结方案；不为改变测试胜负更换种子或剔除抽样,design_choice,单样本DNB依赖固定参考；该稳定性扩展不是原论文验收标准
+reference_resampling_quantiles,0.25|0.5|0.75,configs/reference_stability.json,参考重采样分数摘要,中位数减少极端比值影响；四分位跨度供匹配模型评估稳定性,任何抽样不可计算则拒判；不得只对DNB筛参考人物,design_choice,https://doi.org/10.1371/journal.pcbi.1005633；固定原始尺度且每次参考抽样跨日期共用
+reference_resampling_seed,20261010,configs/reference_stability.json,固定人物抽样,使所有方法共用相同参考人群并可重算,改变种子另存敏感性实验；不可挑最好种子,reproducibility,固定伪随机序列；不代表最佳参数
 temporal_history_days,3,configs/temporal_warning.json,仅当前及过去的短期均值波动和相邻日变化,现有共同预测段只有5天；3天提供短期变化的探索起点且不足历史不填零,更长真实记录中另行冻结窗口比较；不是最佳生理窗口,design_choice,当前可用历史长度；不得使用未来记录
 temporal_half_lives,0|1|2|4,configs/temporal_warning.json,个人DNB与偏离法的因果平滑,保留不平滑并用二倍间隔覆盖短于7天预测期的记忆长度,仅以开发人物内部三折AUC选择；不按测试回选,experimental_grid,时间间隔按实际经过天数；当前无分数继续拒判
 temporal_inner_folds,3,configs/temporal_warning.json,按人选择监督模型和平滑记忆,60名开发人物保持整人分组且两类结果在各折均存在,新数据先核验每折两类人数；禁止改成随机拆行,development_cross_fitting,https://scikit-learn.org/stable/modules/cross_validation.html

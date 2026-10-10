@@ -206,6 +206,8 @@ R 算术检查：`Rscript tests/core/check_dnbr.R ../Caches/rhythm-dnb-r/library
 
 连续记录实验：`python -m tools.run_temporal_warning --packet 原数据包 --predictions 原文本预测.json --parent 个人化实验评价目录 --output 新目录`。参数在 `configs/temporal_warning.json`；比较个人 DNB 的因果平滑，以及连续指标分别加入／不加入 DNB 的匹配监督模型。均只用当前及过去记录，按人选参数、另组校准，保存模型、全部预测和配对区间。复用经原实验哈希核验的分数，无需重训文本模型；它是已查看模拟数据上的探索实验，不自动替换正式预警模型。
 
+参考稳定性实验：`python -m tools.run_reference_stability --packet 原数据包 --predictions 原文本预测.json --parent 个人化实验评价目录 --temporal-parent 连续记录实验评价目录 --output 新目录`。参数在 `configs/reference_stability.json`；200 次按参考人物抽样，同一抽样用于所有预测日，DNB 与偏离对照同等处理。保存每次分数、中位数与跨度、匹配模型及全部测试结果；原三种方法必须重现。仅需 CPU，中位数跨度不是置信区间，重复抽样不增加独立人数。
+
 量化误差排查：先运行 `python -m tools.run_dnbr_measurement export --database 原SQLite --packet 原数据包 --output 参考分数.json`，再运行其 `evaluate` 子命令，传入 `--packet`、`--predictions`、`--references`、`--parent`（三组交叉验证目录）、`--library` 和新的 `--output`。比较模型分数、编写时参考分数、仅客观指标；均重新发现和校准。只读原数据库，参考分数不视为独立人工真值，也不用于替换部署时的文本模型。
 
 分数校准：`python -m tools.run_dnbr_calibration score --packet 原数据包 --checkpoint 本轮选定检查点 --base 基模目录 --predictions 原DNB文本预测 --output 新目录`，在 GPU 上保存开发文本分数及逐条续算缓存。完成后执行 `evaluate` 子命令，保持相同参数和输出目录，另加 `--parent 三组交叉验证目录 --library R包目录`。只学习四项程度分数的修正，不改语境依据门槛；先保存校准规则，再运行 DNB。恢复推理时数据、代码和运行条件必须一致；失败的评价目录保留，不覆盖重跑。
