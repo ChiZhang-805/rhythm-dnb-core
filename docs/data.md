@@ -44,6 +44,14 @@
 
 `io/sources/` 保留不同真实数据集的读取器。多数历史读取器输出回顾性记录；补齐并验证真实时间及来源后，才可通过规范化入口接入预警流程。
 
+医院多工作表 `.xls` 使用 `tools/analyze_hospital.py`（需 `io,plots` 依赖）。按每张表的列名读取，合并成一个工作表；含糊日期、越界评分和待核实单元格保留原始依据，未知不填零。`configs/hospital_indicators.json` 固定 12/24 项指标比较，按人整体重抽样；它检查指标覆盖和相关关系，**不产生预警正确率**，也不把记录次序当成疾病阶段。
+
+```sh
+python tools/analyze_hospital.py --input /医院监测.xls --description /数据说明.docx --plan configs/hospital_indicators.json --output runs/hospital-analysis --plots
+```
+
+输出目录必须是新的；包含单表 Excel、源格核对清单、网络图、简短结论及哈希。`followup-request.csv` 仅预填人员编号，稳定期、真实结局与时间留给原始记录持有人核实。原表和医院数据不进入 Git。
+
 `tools/audit_project.py --database /绝对路径/历史库.sqlite --output-dir /绝对路径/检查结果` 可只读检查历史库，并输出真实字段分布和来源覆盖图。该参数面向原项目的历史表结构；核心库通过 repository 接口读取。网络相关热力图、分量柱状图和散点图由 `research/plots.py` 接收实际测量矩阵生成，不自造数据。
 
 扩大实验前运行 `tools/audit_expansion.py --database /来源库.sqlite --text-development /文本开发集.json --output /新检查目录`。它逐条清点来源、连续日期、原始测量覆盖、结局缺项和文本开发用过的人，输出 CSV 与哈希清单。日期足够只说明可能形成窗口，不代表已有正确答案；旧库中填满的数值也不等于全部实测。先按用途利用全部记录，再以有独立结果的部分评估预警，不能把训练记录直接并入测试正确率。

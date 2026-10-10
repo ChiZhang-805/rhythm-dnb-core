@@ -1,0 +1,25 @@
+{
+  "purpose": "descriptive_hospital_indicator_audit_not_warning_validation",
+  "panels": {
+    "core": ["sleep_duration_h", "nap_duration_min", "exercise_minutes", "resting_hr_bpm", "skin_temp_c", "spO2_pct", "press_score", "general_mood", "energy_score", "fatigue_score", "social_interaction_min", "screen_time_min"],
+    "expanded": ["sleep_duration_h", "nap_duration_min", "exercise_minutes", "resting_hr_bpm", "skin_temp_c", "spO2_pct", "press_score", "general_mood", "energy_score", "fatigue_score", "social_interaction_min", "screen_time_min", "breakfast_kcal", "lunch_kcal", "dinner_kcal", "water_ml", "caffeine_mg", "ambient_temp_c", "noise_db", "social_contact_count", "stool_count", "heart_rate_bpm", "_max_bpm", "spO2_min_pct"]
+  },
+  "bootstrap_replicates": 1000,
+  "seed": 20261010,
+  "interval_quantiles": [0.025, 0.975],
+  "review_cells": [{"sheet": "Sheet26", "cell": "R7", "field": "water_ml", "reason": "source_value_requires_confirmation"}],
+  "design": {
+    "cohort": "Same people complete on all expanded-panel fields at all recording occasions; report exclusions and all-row coverage separately.",
+    "occasions": "Source row order only. Not disease stages, calendar-aligned visits, stable baselines, or equal time intervals.",
+    "resampling": "Resample whole participants with replacement using the same draws for both panels and every occasion. Never bootstrap 240 rows as independent people.",
+    "networks": "Signed Pearson correlations across participants at each recording occasion. Descriptive only: population differences and acquisition factors can drive associations.",
+    "dimension": "Participation ratio p^2 / sum(R^2) for a standardized correlation matrix. Not a biological variable count or a test of DNB sufficiency.",
+    "intervals": "Pointwise participant-bootstrap percentile intervals, not simultaneous significance tests. 1000 draws are a computational precision setting, not an optimized prediction parameter.",
+    "clock_times": "Retain valid clock observations; exclude from linear Pearson panels to avoid midnight discontinuities and unverified calendar alignment.",
+    "other_exclusions": "Identifiers/age/sex are metadata; exercise type is categorical; nap count, late-night flag, smoking level and 1-5 self-rating require discrete/ordinal sensitivity designs. Retain time in bed but do not add another closely related sleep-duration measure to this initial comparison.",
+    "missingness": "No imputation or winsorization. Out-of-scale and explicitly questioned cells are withheld from analysis but raw cells are preserved. Compare raw questioned numeric value as a separate sensitivity check, never as a correction.",
+    "selection": "Panels specified by measurement domains before network calculation; no best-panel selection, module discovery, p-value gates or warning thresholds.",
+    "readiness": "No actual event/onset, stable-reference labels, full calendar timestamps or continuous daily records supplied. Warning accuracy, lead time and clinical DNB transition claims remain unavailable."
+  },
+  "references": ["https://www.nature.com/articles/srep00342", "https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005633"]
+}
