@@ -1,0 +1,27 @@
+{
+  "purpose": "exploratory_next_observation_timing_shift_not_clinical_warning_validation",
+  "features": ["sleep_duration_h", "nap_duration_min", "exercise_minutes", "resting_hr_bpm", "skin_temp_c", "spO2_pct", "press_score", "general_mood", "energy_score", "fatigue_score", "social_interaction_min", "screen_time_min"],
+  "folds": 5,
+  "seed": 20261011,
+  "alert_quantiles": [0.8, 0.9, 0.95],
+  "primary_alert_quantile": 0.9,
+  "shift_minutes": [30, 60, 90],
+  "primary_shift_minutes": 60,
+  "bootstrap_replicates": 1000,
+  "epsilon": 1e-8,
+  "recording_month_day_range": ["08-31", "09-20"],
+  "design": {
+    "target": "Both sleep midpoint and mean absolute change of breakfast/lunch/dinner clock times shift by at least the stated minutes at the next recorded occasion. This is observed timing change, not deterioration, persistent disruption or clinical diagnosis.",
+    "target_fields": "Sleep start/end and three meal clock times are completely excluded from numerical DNB and matched deviation inputs. Only past/current numeric features issue scores; only a later record determines the proxy comparison.",
+    "timing": "Use consecutive source-row pairs with individually unambiguous month/day and positive gaps within the documented Aug31-Sep20 period. Do not infer the year, repair ambiguous dates, fill intervening days, or interpret the observation gap as clinical warning lead time.",
+    "split": "Five shuffled person folds fixed without inspecting outcomes. Test fold k; independent calibration fold k+1; remaining three folds supply first-record reference people. Every person receives held-out scores once. This is retrospective participant separation, not calendar-time deployment validation.",
+    "reference": "First records of reference-only people, with complete input features; no claim these people are clinically stable. Mean and sample SD fitted on this reference only; no self inclusion or future records from test people.",
+    "score": "Reuse existing personal_components: maximum proper single-linkage branch score, K-squared internal mean of absolute delta Pearson. Exploratory unscreened branches, not proven DNB modules or Chen's full clinical protocol.",
+    "threshold": "Use independent calibration people's occasions 1-3; alert when score is strictly above their score quantile. Primary 0.9 defines a nominal top-decile screening budget, not a validated false-alarm rate or optimized operating point. Report 0.8 and 0.95 too.",
+    "proxy_cutoff": "One hour is a transparent exploratory size-of-change convention, not a clinical diagnostic cutoff. Report 30/60/90 minutes without picking whichever favors DNB. Primary continuous comparison is rank association with min(sleep shift, mean meal shift), avoiding dependence on one binary cutoff.",
+    "controls": "Same-feature mean absolute standardized deviation, same person partitions and calibration quantiles; additionally always-no-change accuracy on the identical eligible pairs.",
+    "uncertainty": "1000 participant-cluster resamples of fixed held-out predictions, including paired differences. Conditional on this split and fitted models; not full model-refitting uncertainty, not independent record resampling.",
+    "preservation": "Source and earlier analyses unchanged. All 180 adjacent-row prediction attempts retained, including unusable dates or outcomes. No clinical labels written to the source database."
+  },
+  "references": ["https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005633", "https://academic.oup.com/sleep/article/44/10/zsab103/6232042"]
+}

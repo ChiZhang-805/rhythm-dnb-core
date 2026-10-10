@@ -52,6 +52,8 @@ python tools/analyze_hospital.py --input /医院监测.xls --description /数据
 
 输出目录必须是新的；包含单表 Excel、源格核对清单、网络图、简短结论及哈希。`followup-request.csv` 仅预填人员编号，稳定期、真实结局与时间留给原始记录持有人核实。原表和医院数据不进入 Git。
 
+没有真实标签时，可先运行 `tools/test_hospital_proxy.py --input /已整理的normalized.json --plan configs/hospital_proxy.json --output runs/hospital-proxy --plots`。它用前一次数值记录评分，与后一次睡眠/进餐时点变化比对；按人隔离背景、门槛校准和测试，输出逐条提醒、参考变化及简单对照。背景未确认稳定，60 分钟只是临时比较尺度，不能将符合率称为真实紊乱正确率。30/60/90 分钟及三个提醒门槛全部报告，日期含糊或记录缺失不补成阴性，也不挑选最好的一格作结论。
+
 `tools/audit_project.py --database /绝对路径/历史库.sqlite --output-dir /绝对路径/检查结果` 可只读检查历史库，并输出真实字段分布和来源覆盖图。该参数面向原项目的历史表结构；核心库通过 repository 接口读取。网络相关热力图、分量柱状图和散点图由 `research/plots.py` 接收实际测量矩阵生成，不自造数据。
 
 扩大实验前运行 `tools/audit_expansion.py --database /来源库.sqlite --text-development /文本开发集.json --output /新检查目录`。它逐条清点来源、连续日期、原始测量覆盖、结局缺项和文本开发用过的人，输出 CSV 与哈希清单。日期足够只说明可能形成窗口，不代表已有正确答案；旧库中填满的数值也不等于全部实测。先按用途利用全部记录，再以有独立结果的部分评估预警，不能把训练记录直接并入测试正确率。
